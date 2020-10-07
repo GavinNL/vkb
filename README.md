@@ -79,7 +79,7 @@ vk::Device device ...;
 // a storage container to store created objects by their hash
 vkb::Storage storage;
 
-vkj::PipelineLayoutCreateInfo2 PLC;
+vkb::PipelineLayoutCreateInfo2 PLC;
 
 // 4 samplers for the first set on binding 0
 PLC.newDescriptorSet().addDescriptor( 0, vk::DescriptorType::eCombinedImageSampler, 4, vk::ShaderStageFlagBits::eVertex);
@@ -134,7 +134,7 @@ twice, it will not create a new module.
     vkb::Storage storage;
 
 
-    vkj::GraphicsPipelineCreateInfo2 PCI;
+    vkb::GraphicsPipelineCreateInfo2 PCI;
 
     // Viewports
     PCI.viewportState.viewports.emplace_back( vk::Viewport(0,0,1024,768,0,1.0f));
@@ -158,7 +158,7 @@ twice, it will not create a new module.
     //               and have it auto generate the renderpass for us.
     //               PCI.rendeRenderPass is a variant, you can either provide it
     //               with a vk::RenderPass or a vkb::RenderPassCreateInfo2
-    PCI.renderPass = vkj::RenderPassCreateInfo2::defaultSwapchainRenderPass( {{ swapchainFormat, vk::ImageLayout::ePresentSrcKHR}});
+    PCI.renderPass = vkb::RenderPassCreateInfo2::defaultSwapchainRenderPass( {{ swapchainFormat, vk::ImageLayout::ePresentSrcKHR}});
 
     // Descriptor sets/Push constants
     PCI.addPushConstantRange(vk::ShaderStageFlagBits::eVertex, 0, 128);
