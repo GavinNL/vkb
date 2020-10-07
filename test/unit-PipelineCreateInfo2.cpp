@@ -1,5 +1,4 @@
 #include "catch.hpp"
-#include <nlohmann/json.hpp>
 #include <fstream>
 
 #include <SDL2/SDL.h>
@@ -10,7 +9,7 @@
 #include <vulkan/vulkan.hpp>
 
 #include <vkb/vkb.h>
-#include <vkb/serial/from_json.h>
+
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL VulkanReportFunc(
     VkDebugReportFlagsEXT flags,

@@ -1,5 +1,4 @@
 #include "catch.hpp"
-#include <nlohmann/json.hpp>
 #include <fstream>
 
 #include <SDL2/SDL.h>
@@ -10,7 +9,7 @@
 #include <vulkan/vulkan.hpp>
 
 #include <vkb/vkb.h>
-#include <vkb/serial/from_json.h>
+
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL VulkanReportFunc(
     VkDebugReportFlagsEXT flags,
@@ -54,33 +53,15 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
 
 
     {
-    auto jstr = R"foo(
-    {
-        "layout":
-        {
-            "flags" : [ "UpdateAfterBindPool"],
-            "bindings" : [
-                {
-                    "binding" : 0,
-                    "descriptorType" : "CombinedImageSampler",
-                    "descriptorCount" : 4,
-                    "stageFlags" : ["Fragment"]
-                }
-            ]
-        }
-    }
-    )foo";
+        vkb::DescriptorSetLayoutCreateInfo2 v;
 
-        auto J = nlohmann::json::parse(jstr);
-
-        vkb::DescriptorSetLayoutCreateInfo2 v = J.at("layout").get< vkb::DescriptorSetLayoutCreateInfo2 >();
-
+        v.addDescriptor(0, vk::DescriptorType::eCombinedImageSampler, 4, vk::ShaderStageFlagBits::eFragment);
         REQUIRE( v.bindings.size() == 1);
         REQUIRE( v.bindings[0].binding         == 0);
         REQUIRE( v.bindings[0].descriptorType  == vk::DescriptorType::eCombinedImageSampler);
         REQUIRE( v.bindings[0].descriptorCount == 4);
         REQUIRE( v.bindings[0].stageFlags      == vk::ShaderStageFlagBits::eFragment);
-        REQUIRE( v.flags                       == vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool);
+
         v.flags = {};
 
 

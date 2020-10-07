@@ -1,5 +1,4 @@
 #include "catch.hpp"
-#include <nlohmann/json.hpp>
 #include <fstream>
 
 #include <SDL2/SDL.h>
@@ -10,7 +9,6 @@
 #include <vulkan/vulkan.hpp>
 
 #include <vkb/vkb.h>
-#include <vkb/serial/from_json.h>
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL VulkanReportFunc(
     VkDebugReportFlagsEXT flags,
@@ -54,46 +52,16 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
 
 
     {
-    auto jstr = R"foo(
-    {
-        "pushConstantRanges":
-        [
-            {
-                "size" : 64,
-                "offset" : 0,
-                "stageFlags" : ["Fragment"]
-            }
-        ],
-        "setLayouts":
-            [
-                {
-                    "bindings" : [
-                        {
-                            "binding" : 0,
-                            "descriptorType" : "CombinedImageSampler",
-                            "descriptorCount" : 4,
-                            "stageFlags" : ["Fragment"]
-                        }
-                    ]
-                },
-                {
-                    "bindings" : [
-                        {
-                            "binding" : 0,
-                            "descriptorType" : "StorageBuffer",
-                            "descriptorCount" : 1,
-                            "stageFlags" : ["Vertex"]
-                        }
-                    ]
-                }
-            ]
+        vkb::PipelineLayoutCreateInfo2 v;// = J.get< vkb::PipelineLayoutCreateInfo2 >();
 
-    }
-    )foo";
+        // set 0
+        v.newDescriptorSet().addDescriptor(0, vk::DescriptorType::eCombinedImageSampler, 4, vk::ShaderStageFlagBits::eFragment);
 
-        auto J = nlohmann::json::parse(jstr);
+        // set 1
+        v.newDescriptorSet().addDescriptor(0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eVertex);
 
-        vkb::PipelineLayoutCreateInfo2 v = J.get< vkb::PipelineLayoutCreateInfo2 >();
+        // push constants
+        v.addPushConstantRange( vk::ShaderStageFlagBits::eFragment, 0, 64);
 
         REQUIRE( v.pushConstantRanges.size() == 1);
         REQUIRE( v.setLayoutsDescriptions.size() == 2);

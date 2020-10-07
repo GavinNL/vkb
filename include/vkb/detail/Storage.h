@@ -2,6 +2,7 @@
 #define VKJSON_STORAGE_H
 
 #include <vulkan/vulkan.hpp>
+#include <map>
 
 namespace vkb
 {
