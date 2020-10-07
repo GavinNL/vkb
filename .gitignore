@@ -1,0 +1,4 @@
+*build/
+CMakeLists.txt.user
+third_party/SDLVulkanWindow
+third_party/vka3

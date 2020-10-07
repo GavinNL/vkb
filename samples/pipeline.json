@@ -1,0 +1,362 @@
+{
+	"type": "object",
+	"$defs": {
+		"format": {
+			"type": "string",
+			"enum": ["R32G32B32Sfloat", "R32G32Sfloat"],
+			"default": "R32G32B32Sfloat"
+		},
+		"blendFactor": {
+			"type": "string",
+			"enum": ["Zero", "One", "SrcColor", "OneMinusSrcColor", "DstColor", "OneMinusDstColor", "SrcAlpha", "OneMinusSrcAlpha", "DstAlpha", "OneMinusDstAlpha", "ConstantColor", "OneMinusConstantColor", "ConstantAlpha", "OneMinusConstantAlpha", "SrcAlphaSaturate", "Src1Color", "OneMinusSrc1Color", "Src1Alpha", "OneMinusSrc1Alpha"]
+		},
+		"blendOp": {
+			"type": "string",
+			"enum": ["Add", "Subtract", "ReverseSubtract", "Min", "Max", "ZeroEXT", "SrcEXT", "DstEXT", "SrcOverEXT", "DstOverEXT", "SrcInEXT", "DstInEXT", "SrcOutEXT", "DstOutEXT", "SrcAtopEXT", "DstAtopEXT", "XorEXT", "MultiplyEXT", "ScreenEXT", "OverlayEXT", "DarkenEXT", "LightenEXT", "ColordodgeEXT", "ColorburnEXT", "HardlightEXT", "SoftlightEXT", "DifferenceEXT", "ExclusionEXT", "InvertEXT", "InvertRgbEXT", "LineardodgeEXT", "LinearburnEXT", "VividlightEXT", "LinearlightEXT", "PinlightEXT", "HardmixEXT", "HslHueEXT", "HslSaturationEXT", "HslColorEXT", "HslLuminosityEXT", "PlusEXT", "PlusClampedEXT", "PlusClampedAlphaEXT", "PlusDarkerEXT", "MinusEXT", "MinusClampedEXT", "ContrastEXT", "InvertOvgEXT", "RedEXT", "GreenEXT", "BlueEXT"]
+		},
+		"shaderStageFlags": {
+			"type": "string",
+			"enum": [
+				"Vertex",
+				"TessellationControl",
+				"TessellationEvaluation",
+				"Geometry",
+				"Fragment",
+				"Compute",
+				"RaygenNV",
+				"AnyHitNV",
+				"ClosestHitNV",
+				"MissNV",
+				"IntersectionNV",
+				"CallableNV",
+				"TaskNV",
+				"MeshNV"
+			]
+		},
+		"descriptorType": {
+			"type": "string",
+			"enum": [
+				"Sampler",
+				"CombinedImageSampler",
+				"SampledImage",
+				"StorageImage",
+				"UniformTexelBuffer",
+				"StorageTexelBuffer",
+				"UniformBuffer",
+				"StorageBuffer",
+				"UniformBufferDynamic",
+				"StorageBufferDynamic",
+				"InputAttachment",
+				"InlineUniformBlockEXT",
+				"AccelerationStructureNV"
+			]
+		},
+		"descriptorSetBinding": {
+			"type": "object",
+			"properties": {
+				"binding": {
+					"type": "integer"
+				},
+				"descriptorType": {
+					"$ref": "#/$defs/descriptorType"
+				},
+				"descriptorCount": {
+					"type": "integer"
+				},
+				"stageFlags": {
+					"type": "array",
+					"items": [{
+						"$ref": "#/$defs/shaderStageFlags"
+					}],
+					"additionalItems": [{
+						"$ref": "#/$defs/shaderStageFlags"
+					}]
+				}
+			}
+		}
+	},
+	"ui:widget": "tabs",
+	"properties": {
+
+		"layout": {
+			"type": "object",
+			"properties": {
+				"descriptorSets": {
+					"type": "array",
+					"additionalItems": [{
+						"type": "object",
+						"ui:order": ["set", "bindings"],
+						"properties": {
+							"set": {
+								"type": "integer"
+							},
+							"bindings": {
+								"type": "array",
+								"additionalItems": [{
+									"$ref": "#/$defs/descriptorSetBinding"
+								}]
+							}
+						}
+					}]
+				}
+			}
+		},
+		"dynamicStates": {
+			"type": "object",
+			"properties": {
+        "dynamicStates" : {
+            "type" : "array",
+            "items" : {
+                "type" : "string",
+                "enum" : ["Viewport","Scissor","LineWidth","DepthBias","BlendConstants","DepthBounds","StencilCompareMask","StencilWriteMask","StencilReference","ViewportWScalingNV","DiscardRectangleEXT","SampleLocationsEXT","ViewportShadingRatePaletteNV","ViewportCoarseSampleOrderNV","ExclusiveScissorNV","LineStippleEXT"]
+            },
+            "uniqueItems" : true
+        }
+			}
+		},
+		"colorBlendState": {
+			"type": "object",
+			"properties": {
+				"ColorBlendAttachmentState": {
+					"type": "array",
+					"additionalItems": [{
+						"type": "object",
+						"properties": {
+							"blendEnable": {
+								"type": "boolean",
+								"ui:widget": "switch",
+								"default": true
+							},
+							"srcColorBlendFactor": {
+								"$ref": "#/$defs/blendFactor",
+								"default": "SrcAlpha"
+							},
+							"dstColorBlendFactor": {
+								"$ref": "#/$defs/blendFactor",
+								"default": "OneMinusDstAlpha"
+							},
+							"colorBlendOp": {
+								"$ref": "#/$defs/blendOp",
+								"default": "Add"
+							},
+							"srcAlphaBlendFactor": {
+								"$ref": "#/$defs/blendFactor",
+								"default": "SrcAlpha"
+							},
+							"dstAlphaBlendFactor": {
+								"$ref": "#/$defs/blendFactor",
+								"default": "OneMinusDstAlpha"
+							},
+							"alphaBlendOp": {
+								"$ref": "#/$defs/blendOp",
+								"default": "Add"
+							},
+							"ColorComponentFlagBits.R": {
+								"type": "boolean",
+								"ui:widget": "switch",
+								"default": true
+							},
+							"ColorComponentFlagBits.G": {
+								"type": "boolean",
+								"ui:widget": "switch",
+								"default": true
+							},
+							"ColorComponentFlagBits.B": {
+								"type": "boolean",
+								"ui:widget": "switch",
+								"default": true
+							},
+							"ColorComponentFlagBits.A": {
+								"type": "boolean",
+								"ui:widget": "switch",
+								"default": true
+							}
+						}
+					}]
+				},
+				"logicOpEnable": {
+					"type": "boolean",
+					"ui:widget": "switch"
+				},
+				"blendConstants": {
+					"type": "array",
+					"items": [{
+							"type": "number"
+						},
+						{
+							"type": "number"
+						},
+						{
+							"type": "number"
+						},
+						{
+							"type": "number"
+						}
+					]
+				},
+				"logicOp": {
+					"type": "string",
+					"enum": ["Clear", "And", "AndReverse", "Copy", "AndInverted", "NoOp", "Xor", "Or", "Nor", "Equivalent", "Invert", "OrReverse", "CopyInverted", "OrInverted", "Nand", "Set"]
+				}
+			}
+		},
+		"inputAssemblyState": {
+			"type": "object",
+			"properties": {
+				"topology": {
+					"type": "string",
+					"enum": [
+						"PointList",
+						"LineList",
+						"LineStrip",
+						"TriangleList",
+						"TriangleStrip",
+						"TriangleFan",
+						"LineListWithAdjacency",
+						"LineStripWithAdjacency",
+						"TriangleListWithAdjacency",
+						"TriangleStripWithAdjacency",
+						"PatchList"
+					]
+				}
+			}
+		},
+    "vertexInputState" : {
+        "type" : "object",
+        "properties" : {
+            "vertexAttributeDescriptions": {
+        			"type": "array",
+        			"additionalItems": [
+                    {
+                  			"type": "object",
+                  			"properties": {
+                  				"format": {
+                  					"$ref": "#/$defs/format"
+                  				},
+                  				"location": {
+                  					"type": "integer",
+                            "minimum" : 0
+                  				},
+                  				"binding": {
+                  					"type": "integer",
+                            "minimum" : 0
+                  				},
+                  				"offset": {
+                  					"type": "integer",
+                            "minimum" : 0
+                  				}
+                  			},
+                  			"ui:order": ["location", "binding", "format", "offset"]
+              			}
+                ]
+        		},
+            "vertexBindingDescriptions": {
+        			"type": "array",
+        			"additionalItems": [
+                    {
+                  			"type": "object",
+                  			"properties": {
+                  				"binding": {
+                  					"type": "integer"
+                  				},
+                  				"stride": {
+                  					"type": "integer"
+                  				},
+                  				"inputRate": {
+                  					"type": "string",
+                  					"enum": ["Vertex", "Instance"],
+                  					"default": "Vertex"
+                  				}
+                  			},
+                  			"ui:order": ["binding", "stride", "inputRate"]
+              			}
+                ]
+        		}
+        }
+    },
+		"rasterizationState": {
+			"type": "object",
+			"properties": {
+				"DepthBiasClamp": {
+					"type": "boolean",
+					"ui:widget": "switch"
+				},
+				"DepthClampEnable": {
+					"type": "boolean",
+					"ui:widget": "switch"
+				},
+				"RasterizerDiscardEnable": {
+					"type": "boolean",
+					"ui:widget": "switch"
+				},
+				"PolygonMode": {
+					"type": "string",
+					"enum": ["Fill", "Line", "Point"]
+				},
+				"LineWidth": {
+					"type": "number",
+					"minimum": 0
+				},
+				"CullMode": {
+					"type": "string",
+					"enum": ["None", "Back", "Front"]
+				},
+				"FrontFace": {
+					"type": "string",
+					"enum": ["Clockwise", "CounterClockwise"]
+				},
+				"DepthBiasEnable": {
+					"type": "boolean",
+					"ui:widget": "switch"
+				}
+			}
+		},
+
+		"depthStencilState": {
+			"type": "object",
+			"properties": {
+				"DepthTestEnable": {
+					"type": "boolean",
+					"ui:widget": "switch"
+				},
+				"DepthWriteEnable": {
+					"type": "boolean",
+					"ui:widget": "switch"
+				},
+				"DepthCompareOp": {
+					"type": "string",
+					"enum": ["Never", "Less", "Equal", "LessOrEqual", "Greater", "NotEqual", "GreaterOrEqual", "Always"]
+				},
+				"DepthBoundsTestEnable": {
+					"type": "boolean",
+					"ui:widget": "switch"
+				},
+				"MinDepthBounds": {
+					"type": "number"
+				},
+				"MaxDepthBounds": {
+					"type": "number"
+				},
+				"StencilTestEnable": {
+					"type": "boolean",
+					"ui:widget": "switch"
+				}
+			}
+		},
+
+		"multisampleState": {
+			"type": "object",
+			"properties": {
+				"SampleShadingEnable": {
+					"type": "boolean",
+					"ui:widget": "switch"
+				},
+				"RasterizationSamples": {
+					"type": "string",
+					"enum": ["1", "2", "4", "8", "16", "32", "64"]
+				}
+			},
+			"ui:order": ["SampleShadingEnable", "RasterizationSamples"]
+		}
+	}
+}
