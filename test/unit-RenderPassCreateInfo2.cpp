@@ -1,5 +1,4 @@
 #include "catch.hpp"
-#include <nlohmann/json.hpp>
 #include <fstream>
 
 #include <SDL2/SDL.h>
@@ -10,7 +9,6 @@
 #include <vulkan/vulkan.hpp>
 
 #include <vkb/vkb.h>
-#include <vkb/serial/from_json.h>
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL VulkanReportFunc(
     VkDebugReportFlagsEXT flags,
@@ -140,51 +138,6 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
         //return;
 
     }
-
-    if(0)
-    {
-        auto jstr = R"foo(
-        {
-            "attachments" : {
-                "attachment" : 3,
-                "layout" : "ShaderReadOnlyOptimal"
-             }
-        }
-        )foo";
-
-        auto J = nlohmann::json::parse(jstr);
-
-        auto a = J.at("attachments").get<vk::AttachmentReference>();
-
-        REQUIRE( a.attachment== 3);
-        REQUIRE( a.layout == vk::ImageLayout::eShaderReadOnlyOptimal);
-
-        return;
-
-        auto ss = J.get<vkb::PipelineShaderStageCreateInfo2>();
-
-        REQUIRE( ss.name == "main");
-        REQUIRE( ss.stage == vk::ShaderStageFlagBits::eVertex);
-        REQUIRE( ss.code.size() > 0);
-
-        vkb::Storage S;
-
-
-        vkb::ShaderModuleCreateInfo2 smci;
-        smci.code = ss.code;
-
-        auto module = smci.create(S, window->getDevice());
-        auto module2 = smci.create(S, window->getDevice());
-        REQUIRE(module == module2);
-        REQUIRE( module != vk::ShaderModule()) ;
-
-
-
-        S.destroy(module, window->getDevice());
-
-        S.destroyAll(window->getDevice());
-    }
-
 
     delete window;
     SDL_Quit();
