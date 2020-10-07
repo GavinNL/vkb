@@ -1,5 +1,5 @@
-#ifndef VKJ_H
-#define VKJ_H
+#ifndef VKB_H
+#define VKB_H
 
 #include "detail/Storage.h"
 #include "detail/DescriptorSetLayoutCreateInfo2.h"
