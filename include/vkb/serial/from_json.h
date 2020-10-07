@@ -5,30 +5,19 @@
 #include "../vkb.h"
 #include "from_json_base.h"
 
+namespace vk {
+
+}
+
 namespace vkb
 {
+
+
 
 inline void from_json(const nlohmann::json & j, PipelineShaderStageCreateInfo2& p)
 {
     j.at("name").get_to(p.name);
-
-    auto str = j.at("stage").get<std::string>();
-    #define CH( VV ) if( str == #VV )  p.stage = vk::ShaderStageFlagBits::e ## VV
-    CH(AnyHitNV);
-    CH(CallableNV);
-    CH(ClosestHitNV);
-    CH(Compute);
-    CH(Fragment);
-    CH(Geometry);
-    CH(IntersectionNV);
-    CH(MeshNV);
-    CH(MissNV);
-    CH(RaygenNV);
-    CH(TaskNV);
-    CH(TessellationControl);
-    CH(TessellationEvaluation);
-    CH(Vertex);
-    #undef CH
+    p.stage = j.at("stage").get<vk::ShaderStageFlagBits>();
 
     // "code" : {
     //     "uri" : "",
@@ -59,7 +48,6 @@ inline void from_json(const nlohmann::json & j, PipelineShaderStageCreateInfo2& 
     }
 
 }
-
 
 inline void from_json(const nlohmann::json & j, PipelineViewportStateCreateInfo2& p)
 {
@@ -114,6 +102,7 @@ inline void from_json(const nlohmann::json & j, PipelineLayoutCreateInfo2& p)
 }
 
 
+
 inline void from_json(const nlohmann::json & j, GraphicsPipelineCreateInfo2& p)
 {
     p.vertexInputState   = j.at("vertexInputState").get<  vkb::PipelineVertexInputStateCreateInfo2  > ();
@@ -124,30 +113,9 @@ inline void from_json(const nlohmann::json & j, GraphicsPipelineCreateInfo2& p)
     p.inputAssemblyState      = j.at("inputAssembly").get<  vk::PipelineInputAssemblyStateCreateInfo  > ();
     p.viewportState      = j.at("viewportState").get<  vkb::PipelineViewportStateCreateInfo2  > ();
     p.tessellation       = j.at("tessellation").get<  vk::PipelineTessellationStateCreateInfo  > ();
+    p.dynamicStates = j.at("dynamicStates").get< std::vector<vk::DynamicState> >();
 
     std::vector<std::string> dynamicStates = j.at("dynamicStates").get< std::vector<std::string> >();
-    auto getDynamicState = [](auto & str)
-    {
-        if( str == "Viewport" ) return vk::DynamicState::eViewport;
-        if( str == "Scissor" ) return vk::DynamicState::eScissor;
-        if( str == "LineWidth" ) return vk::DynamicState::eLineWidth;
-        if( str == "DepthBias" ) return vk::DynamicState::eDepthBias;
-        if( str == "BlendConstants" ) return vk::DynamicState::eBlendConstants;
-        if( str == "DepthBounds" ) return vk::DynamicState::eDepthBounds;
-        if( str == "StencilCompareMask" ) return vk::DynamicState::eStencilCompareMask;
-        if( str == "StencilWriteMask" ) return vk::DynamicState::eStencilWriteMask;
-        if( str == "StencilReference" ) return vk::DynamicState::eStencilReference;
-        if( str == "ViewportWScalingNV" ) return vk::DynamicState::eViewportWScalingNV;
-        if( str == "DiscardRectangleEXT" ) return vk::DynamicState::eDiscardRectangleEXT;
-        if( str == "SampleLocationsEXT" ) return vk::DynamicState::eSampleLocationsEXT;
-        if( str == "ViewportShadingRatePaletteNV" ) return vk::DynamicState::eViewportShadingRatePaletteNV;
-        if( str == "ViewportCoarseSampleOrderNV" ) return vk::DynamicState::eViewportCoarseSampleOrderNV;
-        if( str == "ExclusiveScissorNV" ) return vk::DynamicState::eExclusiveScissorNV;
-        if( str == "LineStippleEXT" ) return vk::DynamicState::eLineStippleEXT;
-    };
-
-    for(auto & s : dynamicStates)
-        p.dynamicStates.push_back( getDynamicState(s));
 
     vk::PipelineShaderStageCreateInfo d;
 
