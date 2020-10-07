@@ -17,6 +17,11 @@ project( vkb
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+#######################################################################################
+# Custom targets so that these files show up in QtCreator for easy editing
+#######################################################################################
+add_custom_target(vbk_otherfiles SOURCES conanfile.txt .gitignore README.md)
+#######################################################################################
 
 
 ################################################################################
@@ -24,12 +29,21 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Extra targets.  adds coverage::coverage, warning::all, warning:error
 SET(PROJECT_TARGETS_PREFIX ${PROJECT_NAME})
 
-include(.cmake/extras.cmake)
+get_directory_property( _is_sub_project PARENT_DIRECTORY)
+if(_is_sub_project)
 
-option( ${PROJECT_NAME}_ENABLE_COVERAGE "Enable Coverage. After build, execute make coverage"        TRUE)
-option( ${PROJECT_NAME}_ENABLE_WARNINGS "Enable Strict Warnings" TRUE)
-option( ${PROJECT_NAME}_ENABLE_TESTING  "Enable Unit Tests" FALSE)
+    option( ${PROJECT_NAME}_ENABLE_COVERAGE "Enable Coverage."        FALSE)
+    option( ${PROJECT_NAME}_ENABLE_WARNINGS "Enable Strict Warnings" FALSE)
+    option( ${PROJECT_NAME}_ENABLE_TESTING  "Enable Unit Tests" FALSE)
 
+else()
+    include(.cmake/extras.cmake)
+
+    option( ${PROJECT_NAME}_ENABLE_COVERAGE "Enable Coverage. "        TRUE)
+    option( ${PROJECT_NAME}_ENABLE_WARNINGS "Enable Strict Warnings" TRUE)
+    option( ${PROJECT_NAME}_ENABLE_TESTING  "Enable Unit Tests" TRUE)
+
+endif()
 ################################################################################
 
 
