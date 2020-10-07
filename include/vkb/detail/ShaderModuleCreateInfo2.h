@@ -1,7 +1,6 @@
 #ifndef VKJSON_SHADERMODULECREATEINFO_H
 #define VKJSON_SHADERMODULECREATEINFO_H
 
-#include <nlohmann/json.hpp>
 #include <vulkan/vulkan.hpp>
 #include <functional>
 

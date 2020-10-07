@@ -1,7 +1,6 @@
 #ifndef VKJSON_PIPELINECREATEINFO2_H
 #define VKJSON_PIPELINECREATEINFO2_H
 
-#include <nlohmann/json.hpp>
 #include <vulkan/vulkan.hpp>
 
 #include "ShaderModuleCreateInfo2.h"

@@ -1,7 +1,6 @@
 #ifndef VKJSON_DESCRIPTORSETLAYOUTCREATEINFO2_H
 #define VKJSON_DESCRIPTORSETLAYOUTCREATEINFO2_H
 
-#include <nlohmann/json.hpp>
 #include <vulkan/vulkan.hpp>
 #include <functional>
 #include "HashFunctions.h"

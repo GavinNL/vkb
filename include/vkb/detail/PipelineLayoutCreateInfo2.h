@@ -1,7 +1,6 @@
 #ifndef VKJSON_PIPELINELAYOUTCREATEINFO2_H
 #define VKJSON_PIPELINELAYOUTCREATEINFO2_H
 
-#include <nlohmann/json.hpp>
 #include <vulkan/vulkan.hpp>
 #include <functional>
 #include <variant>

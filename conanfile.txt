@@ -1,6 +1,5 @@
 [requires]
 sdl2/2.0.9@bincrafters/stable
-nlohmann_json/3.7.3
 
 [generators]
 cmake
