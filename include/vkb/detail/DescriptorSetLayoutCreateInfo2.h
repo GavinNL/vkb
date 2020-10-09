@@ -80,6 +80,29 @@ struct DescriptorSetLayoutCreateInfo2
         return seed;
     }
 
+
+    /**
+     * @brief allocateFromPool
+     * @param S
+     * @param pool
+     * @param device
+     * @return
+     *
+     * Allocate a descriptor set using this layout infromation. The layout will be
+     * created in the storage are and reused if needed.
+     */
+    vk::DescriptorSet allocateFromPool(Storage & S, vk::DescriptorPool pool, vk::Device device)
+    {
+        auto layout = create(S, device);
+        vk::DescriptorSetAllocateInfo i;
+        i.setDescriptorSetCount(1)
+         .setPSetLayouts(&layout)
+         .setDescriptorPool(pool);
+
+        auto sets = device.allocateDescriptorSets(i);
+        return sets.front();
+
+    }
     //============================================================
     // Helper functions
     //============================================================
