@@ -241,7 +241,19 @@ struct GraphicsPipelineCreateInfo2
     }
 
 
-    object_type create(Storage & S, vk::Device device) const
+    /**
+     * @brief create
+     * @param S
+     * @param device
+     * @return
+     *
+     * Create the pipeline and return the layout and renderpass as well. If the CreateInfo struct
+     * provided the layout/renderpass, then the returned values are teh same.
+     *
+     * If the createInfo struct provided layout and renderpass descriptions, then the new layout/renderpasses
+     * will be created and returned.
+     */
+    std::tuple<object_type, vk::PipelineLayout, vk::RenderPass> create(Storage & S, vk::Device device) const
     {
         //auto h = hash();
         //auto & _map = S.shaderModules;
@@ -279,7 +291,8 @@ struct GraphicsPipelineCreateInfo2
             cpy.renderPass =  std::get<vkb::RenderPassCreateInfo2>(cpy.renderPass).create(S , device);
         }
 
-        return cpy.create(device);
+        return std::make_tuple(cpy.create(device), std::get<vk::PipelineLayout>(cpy.layout), std::get<vk::RenderPass>(cpy.renderPass) );
+    }
 
     size_t hash() const
     {

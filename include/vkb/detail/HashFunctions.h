@@ -29,6 +29,21 @@ inline size_t hash_f( vk::Flags<Bits,Flags>  c)
     return H( static_cast<Flags>(c));
 }
 
+template<typename T>
+inline size_t hash_pod(T const & v)
+{
+    static_assert( sizeof(T)%sizeof(uint32_t)==0, "must be a multiple of ");
+    size_t seed = 0x9e3779b9;
+    std::hash<uint32_t> H;
+    uint32_t const * b = reinterpret_cast<uint32_t const*>(&v);
+    auto e = b + sizeof(T)/sizeof(uint32_t);
+    while(b != e)
+    {
+        hash_c(seed, H(*b++));
+    }
+    return seed;
+}
+
 }
 
 #endif
