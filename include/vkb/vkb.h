@@ -7,5 +7,6 @@
 #include "detail/PipelineLayoutCreateInfo2.h"
 #include "detail/RenderPassCreateInfo2.h"
 #include "detail/ShaderModuleCreateInfo2.h"
-
+#include "detail/DescriptorPoolCreateInfo2.h"
+#include "detail/DescriptorUpdater.h"
 #endif

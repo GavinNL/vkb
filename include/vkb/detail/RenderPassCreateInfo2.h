@@ -227,7 +227,10 @@ struct RenderPassCreateInfo2
 
         uint32_t i=0;
         for(auto & c : colors)
+        {
+            (void)c;
             s.colorAttachments.emplace_back( vk::AttachmentReference(i++, vk::ImageLayout::eColorAttachmentOptimal));
+        }
 
         if( depthFormat.first != vk::Format::eUndefined)
             s.depthStencilAttachment       = vk::AttachmentReference(i, vk::ImageLayout::eDepthStencilAttachmentOptimal);

@@ -88,7 +88,7 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
     PCI.addBlendStateAttachment().setColorBlendOp(vk::BlendOp::eAdd)
                                  .setBlendEnable(true);
 
-    auto pipeline = PCI.create( S, window->getDevice() );
+    auto [pipeline, layout, renderpass] = PCI.create( S, window->getDevice() );
 
     REQUIRE( pipeline != vk::Pipeline());
 
