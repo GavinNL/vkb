@@ -77,7 +77,7 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
 
     // Render Pass - we will initialize the pipeline by providing the RenderPassCreateInfo2 struct
     //               and have it auto generate the renderpass for us.
-    PCI.renderPass = vkb::RenderPassCreateInfo2::defaultSwapchainRenderPass( {{ vk::Format(window->getSwapchainFormat()), vk::ImageLayout::ePresentSrcKHR}});
+    PCI.renderPass = vkb::RenderPassCreateInfo2::createSimpleRenderPass({{ vk::Format(window->getSwapchainFormat()), vk::ImageLayout::ePresentSrcKHR}});
 
     // Descriptor sets/Push constants
     PCI.addPushConstantRange(vk::ShaderStageFlagBits::eVertex, 0, 128);
@@ -94,6 +94,11 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
 
     // 2 shaders were created
     REQUIRE( S.shaderModules.size() == 2);
+
+    // this wont be true because PCI.renderPass is a RenderPassCreateInfo2
+    // and  the getCreateInfo< ... >().renderPass is a vk::RenderPass object
+    //REQUIRE(S.getCreateInfo<vkb::GraphicsPipelineCreateInfo2>(pipeline).hash() == PCI.hash());
+
 
     S.destroy(pipeline, window->getDevice());
 

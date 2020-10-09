@@ -132,6 +132,8 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
         REQUIRE( rp3 == rp4);
         REQUIRE( rp3 != vk::RenderPass());
 
+        REQUIRE( S.getCreateInfo<vkb::RenderPassCreateInfo2>(rp3).hash() == rc2.hash() );
+
         S.destroy(rp2, window->getDevice());
 
         S.destroyAll(window->getDevice());

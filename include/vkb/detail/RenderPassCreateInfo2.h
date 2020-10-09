@@ -127,6 +127,7 @@ struct RenderPassCreateInfo2
         {
             auto l = create(device);
             _map[h] = l;
+            S.storeCreateInfo(l, *this);
             return l;
         }
         else

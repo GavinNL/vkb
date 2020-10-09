@@ -11,11 +11,15 @@ namespace vkb
 
 struct DescriptorSetLayoutCreateInfo2
 {
+    using object_type           = vk::DescriptorPool;
+    using base_create_info_type = vk::DescriptorPoolCreateInfo;
+
+
     vk::DescriptorSetLayoutCreateFlags          flags;
     std::vector<vk::DescriptorSetLayoutBinding> bindings;
 
     template<typename Callable_t>
-    vk::DescriptorSetLayout create_t(Callable_t && CC) const
+    object_type create_t(Callable_t && CC) const
     {
         vk::DescriptorSetLayoutCreateInfo D;
         D.bindingCount = bindings.size();
@@ -34,9 +38,9 @@ struct DescriptorSetLayoutCreateInfo2
      *
      * Create the descriptor set layout
      */
-    vk::DescriptorSetLayout create(vk::Device d) const
+    object_type create(vk::Device d) const
     {
-        return create_t( [d](vk::DescriptorSetLayoutCreateInfo & C)
+        return create_t( [d](base_create_info_type & C)
         {
             return d.createDescriptorSetLayout(C);
         });
@@ -50,13 +54,15 @@ struct DescriptorSetLayoutCreateInfo2
      * Create the descriptor set layout, but only if a similar layout
      * doesnt' already exist in storage.
      */
-    vk::DescriptorSetLayout create(Storage & S, vk::Device device) const
+    object_type create(Storage & S, vk::Device device) const
     {
         auto h = hash();
         auto f = S.descriptorSetLayouts.find(h);
         if( f == S.descriptorSetLayouts.end())
         {
             auto l = create(device);
+            if( l )
+                S.storeCreateInfo(l, *this);
             S.descriptorSetLayouts[h] = l;
             return l;
         }

@@ -196,3 +196,28 @@ twice, it will not create a new module.
 
 
 ## Storage
+
+Any objects created using the `.create(vkb::Storage&, vulkanObject)`  method,
+will also store its CreateInfo struct in the storage.  That way you can query
+how the object was created. For example, you can use this to determine what the
+vertex input data is for a particular pipeline.
+
+```C++
+vkb::Storage S;
+
+vkb::XXXXCreateInfo2 C;
+
+auto l = C.create(S, device);
+
+auto & S.getCreateInfo(l);
+
+```
+
+Note that the the following equality is not always true.
+`S.getCreateInfo(l).hash() == C.hash()`. This is because certain objects which
+depend on other vulkan objects, such as PipelineLayouts, which depend on
+DescriptorSetLayouts, can store the construction information either as a vector
+of `vk::DescriptorSetLayout`, or a vector of
+`vkb::DescriptorSetLayoutCreateInfo2`. When the .create(...) method is called,
+if the struct contains DescriptorSetLayoutCreateInfo2, those will be converted
+into vk::DescriptorSetLayouts and then hashed in the Storage.

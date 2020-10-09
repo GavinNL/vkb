@@ -77,6 +77,17 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
 
 
         S.destroy(d, window->getDevice());
+
+        auto & Ci = S.getCreateInfo<vkb::DescriptorSetLayoutCreateInfo2>(d);
+
+        REQUIRE( Ci.bindings.size()             == v.bindings.size()            );
+        REQUIRE( Ci.bindings[0].binding         == v.bindings[0].binding        );
+        REQUIRE( Ci.bindings[0].descriptorType  == v.bindings[0].descriptorType );
+        REQUIRE( Ci.bindings[0].descriptorCount == v.bindings[0].descriptorCount);
+        REQUIRE( Ci.bindings[0].stageFlags      == v.bindings[0].stageFlags     );
+
+        REQUIRE( Ci.hash() == v.hash() );
+
     }
 
 

@@ -45,6 +45,14 @@ struct DescriptorPoolCreateInfo2
         });
     }
 
+    object_type create(Storage & S, vk::Device device) const
+    {
+        auto l = create(device);
+        if( l )
+            S.storeCreateInfo(l, *this);
+        return l;
+    }
+
     size_t hash() const
     {
         std::hash<uint32_t> H;

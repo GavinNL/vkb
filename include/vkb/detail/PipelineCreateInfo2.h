@@ -291,7 +291,10 @@ struct GraphicsPipelineCreateInfo2
             cpy.renderPass =  std::get<vkb::RenderPassCreateInfo2>(cpy.renderPass).create(S , device);
         }
 
-        return std::make_tuple(cpy.create(device), std::get<vk::PipelineLayout>(cpy.layout), std::get<vk::RenderPass>(cpy.renderPass) );
+        auto x = std::make_tuple(cpy.create(device), std::get<vk::PipelineLayout>(cpy.layout), std::get<vk::RenderPass>(cpy.renderPass) );
+        if( std::get<0>(x) )
+            S.storeCreateInfo( std::get<0>(x), std::move(cpy));
+        return x;
     }
 
     size_t hash() const

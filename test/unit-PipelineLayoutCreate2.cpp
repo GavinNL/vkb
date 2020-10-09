@@ -88,7 +88,9 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
 
         REQUIRE( d != vk::PipelineLayout() );
 
+        auto & Ci = S.getCreateInfo<vkb::PipelineLayoutCreateInfo2>(d);
 
+        REQUIRE( Ci.setLayouts.size() == v.setLayoutsDescriptions.size() );
         S.destroy(d, window->getDevice());
 
         S.destroyAll(window->getDevice());

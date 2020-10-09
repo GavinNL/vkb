@@ -2,7 +2,9 @@
 #define VKJSON_STORAGE_H
 
 #include <vulkan/vulkan.hpp>
+#include <typeindex>
 #include <map>
+#include <any>
 
 namespace vkb
 {
@@ -53,6 +55,7 @@ struct Storage
                 return;
             }
         }
+        m_createInfos.erase(d);
     }
 
     /**
@@ -77,13 +80,39 @@ struct Storage
         shaderModules.clear();
         renderPasses.clear();
     }
+
+    /**
+     * @brief getCreateInfo
+     * @param d
+     * @return
+     *
+     * Returns the CreateInfo struct that created this vulkan object.
+     * Will throw an exception if the object has not been created
+     * using the storage
+     */
+    template<typename CreateInfoStruct, typename vulkan_handle>
+    CreateInfoStruct const& getCreateInfo( vulkan_handle d) const
+    {
+         return std::any_cast<CreateInfoStruct const&>(m_createInfos.at( static_cast<void*>(d) ));
+    }
+
+    template<typename vulkan_handle, typename CreateInfo>
+    void storeCreateInfo( vulkan_handle h, CreateInfo && c )
+    {
+        m_createInfos[ static_cast<void*>(h) ] = std::move(c);
+    }
+
+
     std::map< size_t , vk::DescriptorSetLayout > descriptorSetLayouts;
     std::map< size_t , vk::PipelineLayout >      pipelineLayouts;
     std::map< size_t , vk::ShaderModule>         shaderModules;
     std::map< size_t , vk::RenderPass>           renderPasses;
+
+    std::map< void*, std::any> m_createInfos;
 };
 
 
 }
 
 #endif
+

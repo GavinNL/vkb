@@ -51,14 +51,22 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
     // images which depend on the size of the swapchain (eg: gBuffers)
     auto e = window->getSwapchainExtent();
 
+    vkb::Storage S;
+
     vkb::DescriptorPoolCreateInfo2 pC;
     pC.setPoolSize( vk::DescriptorType::eCombinedImageSampler, 10);
     pC.setPoolSize( vk::DescriptorType::eUniformBuffer, 10);
     pC.setMaxSets(10);
 
-    auto dPool = pC.create(window->getDevice());
+    auto dPool = pC.create(S, window->getDevice());
 
     REQUIRE( dPool != vk::DescriptorPool() );
+
+    {
+        auto & ci = S.getCreateInfo<vkb::DescriptorPoolCreateInfo2>(dPool);
+
+        REQUIRE( ci.hash() == pC.hash() );
+    }
 
     {
         vkb::DescriptorSetUpdater bb;
@@ -76,15 +84,15 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
 
         v.flags = {};
 
-        vkb::Storage S;
+
 
 
         auto dSet = v.allocateFromPool(S, dPool, window->getDevice());
 
         REQUIRE( dSet != vk::DescriptorSet()) ;
 
-        S.destroyAll( window->getDevice());
     }
+    S.destroyAll( window->getDevice());
 
 
     vk::Device(window->getDevice()).destroyDescriptorPool( dPool );
