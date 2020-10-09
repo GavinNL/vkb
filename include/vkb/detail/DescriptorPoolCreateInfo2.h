@@ -59,7 +59,7 @@ struct DescriptorPoolCreateInfo2
         return seed;
     }
 
-    DescriptorPoolCreateInfo2& setFlags(uint32_t maxsets)
+    DescriptorPoolCreateInfo2& setMaxSets(uint32_t maxsets)
     {
         maxSets = maxsets;
         return *this;
