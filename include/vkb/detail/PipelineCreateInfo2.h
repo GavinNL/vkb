@@ -3,6 +3,7 @@
 
 #include <vulkan/vulkan.hpp>
 
+#include "HashFunctions.h"
 #include "ShaderModuleCreateInfo2.h"
 #include "PipelineLayoutCreateInfo2.h"
 #include "RenderPassCreateInfo2.h"
@@ -17,18 +18,58 @@ struct PipelineShaderStageCreateInfo2
 
     vk::ShaderModule        module;
     std::vector<uint32_t>   code; // if given, the PipelineCreateInfo2 will generate the shader module
+
+    size_t hash() const
+    {
+        std::hash<std::string> Hs;
+        std::hash<void const*> Hv;
+
+        auto seed = Hs(name);
+        hash_c(seed, hash_e(stage));
+        hash_c(seed, Hv(static_cast<void const*>(module)));
+        return seed;
+    }
+
 };
 
 struct PipelineViewportStateCreateInfo2
 {
     std::vector< vk::Viewport>   viewports;
     std::vector< vk::Rect2D>     scissors;
+
+    size_t hash() const
+    {
+        size_t seed = 0x9e3779b9;
+        for(auto & v : scissors)
+        {
+            hash_c(seed, hash_pod(v));
+        }
+        for(auto & v : scissors)
+        {
+            hash_c(seed, hash_pod(v));
+        }
+        return seed;
+    }
 };
 
 struct PipelineVertexInputStateCreateInfo2
 {
     std::vector< vk::VertexInputBindingDescription>   vertexBindingDescriptions;
     std::vector< vk::VertexInputAttributeDescription> vertexAttributeDescriptions;
+
+    size_t hash() const
+    {
+        size_t seed = 0x9e3779b9;
+        for(auto & v : vertexBindingDescriptions)
+        {
+            hash_c(seed, hash_pod(v));
+        }
+        for(auto & v : vertexAttributeDescriptions)
+        {
+            hash_c(seed, hash_pod(v));
+        }
+        return seed;
+    }
 };
 
 struct PipelineColorBlendStateCreateInfo2
@@ -40,6 +81,26 @@ struct PipelineColorBlendStateCreateInfo2
     vk::LogicOp logicOp = vk::LogicOp::eClear;
 
     float blendConstants[4] = {};
+
+    size_t hash() const
+    {
+        std::hash<vk::Bool32> H;
+        std::hash<float> Hf;
+
+        size_t seed = 0x9e3779b9;
+        hash_c(seed, hash_f(flags));
+        hash_c(seed, hash_e(logicOp));
+        hash_c(seed, H(logicOpEnable));
+        for(auto & v : attachments)
+        {
+            hash_c( seed, hash_pod(v));
+        }
+        hash_c(seed, Hf(blendConstants[0]) );
+        hash_c(seed, Hf(blendConstants[1]) );
+        hash_c(seed, Hf(blendConstants[2]) );
+        hash_c(seed, Hf(blendConstants[3]) );
+        return seed;
+    }
 };
 
 struct GraphicsPipelineCreateInfo2
@@ -219,20 +280,48 @@ struct GraphicsPipelineCreateInfo2
         }
 
         return cpy.create(device);
-    }
 
-    //size_t hash() const
-    //{
-    //    std::hash<size_t> H;
-    //
-    //    size_t seed = 0x9e3779b9;
-    //
-    //    //for(auto & b : code)
-    //    //{
-    //    //    hash_c(seed, H(b) );
-    //    //}
-    //    return seed;
-    //}
+    size_t hash() const
+    {
+        size_t seed = 0x9e3779b9;
+
+        for(auto & s : stages)
+            hash_c(seed, s.hash() );
+
+        hash_c(seed, blendState.hash());
+        hash_c(seed, vertexInputState.hash());
+        hash_c(seed, hash_pod(rasterizationState));
+        hash_c(seed, hash_pod(multisampleState));
+        hash_c(seed, hash_pod(depthStencilState));
+        hash_c(seed, hash_pod(inputAssemblyState));
+        hash_c(seed, hash_pod(inputAssemblyState));
+        for(auto & v : dynamicStates)
+            hash_c(seed, hash_e(v) );
+
+        hash_c( seed, viewportState.hash());
+        hash_c(seed, hash_pod(tessellation));
+
+        std::hash<void const*> Hv;
+        if( std::holds_alternative<vk::PipelineLayout>(layout) )
+        {
+            hash_c(seed, Hv( static_cast<void const*>( std::get<vk::PipelineLayout>(layout))));
+        }
+        else
+        {
+            hash_c(seed, std::get<vkb::PipelineLayoutCreateInfo2>(layout).hash() );
+        }
+
+        if( std::holds_alternative<vk::RenderPass>(renderPass) )
+        {
+            hash_c(seed, Hv( static_cast<void const*>( std::get<vk::RenderPass>(renderPass))));
+        }
+        else
+        {
+            hash_c(seed, std::get<vkb::RenderPassCreateInfo2>(renderPass).hash() );
+        }
+
+        return seed;
+    }
 
 
     //=====================================================================
