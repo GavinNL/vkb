@@ -11,8 +11,8 @@ namespace vkb
 
 struct DescriptorSetLayoutCreateInfo2
 {
-    using object_type           = vk::DescriptorPool;
-    using base_create_info_type = vk::DescriptorPoolCreateInfo;
+    using object_type           = vk::DescriptorSetLayout;
+    using base_create_info_type = vk::DescriptorSetLayoutCreateInfo;
 
 
     vk::DescriptorSetLayoutCreateFlags          flags;
