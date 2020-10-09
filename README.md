@@ -11,6 +11,8 @@ The following new structs are created:
 * vkb::RenderPassCreateInfo2
 * vkb::ShaderModuleCreateInfo2
 * vkb::GraphicsPipelineCreateInfo2
+* vkb::DescriptorPoolCreateInfo2
+* vkb::DescriptorUpdater
 
 Each of these structs are fully self-contained, that is, they hold all the data
 required to construct the object. The pointer/size pairs have been replaced with
@@ -21,6 +23,12 @@ Additionally, each of these structs provide a `hash()` method so that it can be
 placed into a map.
 
 ## Constructing Vulkan Objects
+
+There are usually 3 method to create the object.
+
+  * Provide a lambda function which has a single `const &` parameter of the original CreateInfo struct
+  * Simply Provide it with the vk::Device
+  * Provide the vk::Device and the `vkb::Storage&` struct.
 
 ```C++
 

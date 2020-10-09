@@ -119,7 +119,7 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
         REQUIRE( rp == rp2);
 
         auto rc2 =
-        R.defaultSwapchainRenderPass( {
+        R.createSimpleRenderPass( {
                                           {vk::Format::eR8G8B8A8Unorm, vk::ImageLayout::eShaderReadOnlyOptimal},
                                           {vk::Format::eR32G32B32A32Sfloat, vk::ImageLayout::eShaderReadOnlyOptimal},
                                           {vk::Format::eR32G32B32A32Sfloat, vk::ImageLayout::eShaderReadOnlyOptimal}

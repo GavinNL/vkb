@@ -61,6 +61,10 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
     REQUIRE( dPool != vk::DescriptorPool() );
 
     {
+        vkb::DescriptorSetUpdater bb;
+        bb.updateTexelBufferDescriptor( {},{},{}, vk::DescriptorType::eStorageTexelBuffer, { vk::BufferView(), vk::BufferView(), vk::BufferView()});
+    }
+    {
         vkb::DescriptorSetLayoutCreateInfo2 v;
 
         v.addDescriptor(0, vk::DescriptorType::eCombinedImageSampler, 4, vk::ShaderStageFlagBits::eFragment);

@@ -171,11 +171,10 @@ struct RenderPassCreateInfo2
     }
 
 
-    // create a simple renderPassCreateInfo2 struct that can be used
-    // for a simple swapchian with depth testing
-    //
-    // Always places the depthstencil image last in the attachments.
-    static RenderPassCreateInfo2 defaultSwapchainRenderPass(  std::vector< std::pair<vk::Format,vk::ImageLayout> > colors, std::pair<vk::Format,vk::ImageLayout> depthFormat = {vk::Format::eUndefined, vk::ImageLayout::eUndefined})
+
+    // Create a simple renderpass given the output color attachment formats/layouts and the depth stencil format/layout
+    // this creates a RenderPass with a single subpass.
+    static RenderPassCreateInfo2 createSimpleRenderPass(  vk::ArrayProxy< const std::pair<vk::Format,vk::ImageLayout> > colors, std::pair<vk::Format,vk::ImageLayout> depthFormat = {vk::Format::eUndefined, vk::ImageLayout::eUndefined})
     {
         vkb::RenderPassCreateInfo2 R;
 
