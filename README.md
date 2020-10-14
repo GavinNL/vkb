@@ -12,6 +12,8 @@ The following new structs are created:
 * vkb::ShaderModuleCreateInfo2
 * vkb::GraphicsPipelineCreateInfo2
 * vkb::DescriptorPoolCreateInfo2
+* vkb::BufferCreateInfo2
+* vkb::MemoryAllocInfo2
 * vkb::DescriptorUpdater
 
 Each of these structs are fully self-contained, that is, they hold all the data
@@ -221,3 +223,59 @@ of `vk::DescriptorSetLayout`, or a vector of
 `vkb::DescriptorSetLayoutCreateInfo2`. When the .create(...) method is called,
 if the struct contains DescriptorSetLayoutCreateInfo2, those will be converted
 into vk::DescriptorSetLayouts and then hashed in the Storage.
+
+It is always good to use the Storage area when creating objects because this
+provides additional quality-of-life features.
+
+### Buffer Creation
+
+Creating a buffer is quite simple. Set the usage and the size properties and
+then call the create method.
+
+```c++
+vkb::Storage S;
+
+vkb::BufferCreateInfo2 ci;
+ci.usage = vk::BufferUsageFlagBits::eVertexBuffer;
+ci.size  = 2048;
+
+auto buffer = ci.create(S, device);
+
+```
+
+### Memory Allocating
+
+The vkb::MemoryAllocInfo2 struct is a little different than the original. You
+can specify which buffer/image you are creating the memory for and it will
+automatically detect the proper flags.
+
+The create method requires an instance of the vk::Device and the
+vk::physicalDevice.
+
+```c++
+vkb::Storage S;
+
+vkb::MemoryAllocInfo2 ma;
+ma.bufferOrImage = buffer;
+ma.flags = vk::MemoryPropertyFlagBits::eHostVisible;
+
+auto mem = ma.create(S, device, physicalDevice);
+
+```
+
+### Mapping Memory
+
+If you have created memory by using the `vkb::MemoryAllocInfo2::create(storage&,
+...)` method, and the memory created was host visible. Then you can use the
+`vkb::Storage::mapMemory()` method to map the memory. This will hold a copy  of
+the memory pointer in the storage area, and return that the next time it is
+called. You can keep the memory mapped for as long as you want. It is
+recommended to keep the memory mapped until you destroy the memory. In fact, you
+never need to unmap the memory since it will automatically be unmapped when the
+memory is destroyed.
+
+```c++
+  vkb::Storage S;
+
+  void* ptr = S.mapMemory(mem, device);
+```
