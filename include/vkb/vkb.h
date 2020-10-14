@@ -9,4 +9,6 @@
 #include "detail/ShaderModuleCreateInfo2.h"
 #include "detail/DescriptorPoolCreateInfo2.h"
 #include "detail/DescriptorUpdater.h"
+#include "detail/BufferCreateInfo.h"
+#include "detail/MemoryAlloc.h"
 #endif
