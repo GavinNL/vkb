@@ -21,11 +21,16 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL VulkanReportFunc(
     const char* msg,
     void* userData)
 {
+    (void)obj;
+    (void)flags;
+    (void)objType;
+    (void)location;
+    (void)code;
+    (void)userData;
     printf("VULKAN VALIDATION: [%s] %s\n", layerPrefix, msg);
     //throw std::runtime_error( msg );
     return VK_FALSE;
 }
-
 std::vector<uint32_t> readSPV(std::string path)
 {
     std::ifstream stream(path, std::ios::in | std::ios::binary);
