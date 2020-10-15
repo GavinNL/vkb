@@ -31,7 +31,7 @@ struct PipelineLayoutCreateInfo2
         vk::PipelineLayoutCreateInfo D;
 
         D.pPushConstantRanges    = pushConstantRanges.data();
-        D.pushConstantRangeCount = pushConstantRanges.size();
+        D.pushConstantRangeCount = static_cast<uint32_t>(pushConstantRanges.size());
         D.pSetLayouts            = setLayouts.data();
         D.setLayoutCount         = static_cast<uint32_t>(setLayouts.size());
 

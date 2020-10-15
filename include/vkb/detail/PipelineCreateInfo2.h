@@ -176,7 +176,7 @@ struct GraphicsPipelineCreateInfo2
 
         vk::PipelineColorBlendStateCreateInfo _blendState;
         _blendState.pAttachments       = blendState.attachments.data();
-        _blendState.attachmentCount    = blendState.attachments.size();
+        _blendState.attachmentCount    = static_cast<uint32_t>(blendState.attachments.size());
         _blendState.flags              = blendState.flags          ;
         _blendState.logicOpEnable      = blendState.logicOpEnable  ;
         _blendState.logicOp            = blendState.logicOp        ;
@@ -192,7 +192,7 @@ struct GraphicsPipelineCreateInfo2
         _vertexInputState.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexInputState.vertexAttributeDescriptions.size());
 
         vk::PipelineDynamicStateCreateInfo _dynamicState;
-        _dynamicState.dynamicStateCount = dynamicStates.size();
+        _dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
         _dynamicState.pDynamicStates    = dynamicStates.data();
 
         vk::PipelineViewportStateCreateInfo _viewportState;
@@ -309,7 +309,6 @@ struct GraphicsPipelineCreateInfo2
         hash_c(seed, hash_pod(rasterizationState));
         hash_c(seed, hash_pod(multisampleState));
         hash_c(seed, hash_pod(depthStencilState));
-        hash_c(seed, hash_pod(inputAssemblyState));
         hash_c(seed, hash_pod(inputAssemblyState));
         for(auto & v : dynamicStates)
             hash_c(seed, hash_e(v) );

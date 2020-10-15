@@ -22,11 +22,11 @@ struct SubpassDescription2
     void create_t(Callable_t && CC) const
     {
         vk::SubpassDescription D({}, vk::PipelineBindPoint::eGraphics,
-                                 inputAttachments.size(), inputAttachments.data(),
-                                 colorAttachments.size(), colorAttachments.data(),
+                                 static_cast<uint32_t>(inputAttachments.size()), inputAttachments.data(),
+                                 static_cast<uint32_t>(colorAttachments.size()), colorAttachments.data(),
                                  resolveAttachment.has_value() ? &*resolveAttachment : nullptr,
                                  depthStencilAttachment.has_value() ? &*depthStencilAttachment : nullptr,
-                                 preserveAttachments.size(),
+                                 static_cast<uint32_t>(preserveAttachments.size()),
                                  preserveAttachments.data());
         CC(D);
     }
@@ -98,10 +98,10 @@ struct RenderPassCreateInfo2
         }
 
         C.pDependencies   = dependencies.data();
-        C.dependencyCount = dependencies.size();
+        C.dependencyCount = static_cast<uint32_t>(dependencies.size());
         C.pAttachments    = attachments.data();
-        C.attachmentCount = attachments.size();
-        C.subpassCount = _subpasses.size();
+        C.attachmentCount = static_cast<uint32_t>(attachments.size());
+        C.subpassCount = static_cast<uint32_t>(_subpasses.size());
         C.pSubpasses   = _subpasses.data();
 
         return CC(C);

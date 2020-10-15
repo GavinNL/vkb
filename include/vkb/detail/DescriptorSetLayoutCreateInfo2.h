@@ -22,7 +22,7 @@ struct DescriptorSetLayoutCreateInfo2
     object_type create_t(Callable_t && CC) const
     {
         vk::DescriptorSetLayoutCreateInfo D;
-        D.bindingCount = bindings.size();
+        D.bindingCount = static_cast<uint32_t>(bindings.size());
         D.pBindings    = bindings.data();
         D.flags        = flags;
 
