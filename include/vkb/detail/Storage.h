@@ -49,6 +49,11 @@ struct Storage
         dev.destroyBuffer(d);
         m_createInfos.erase(d);
     }
+    void destroy( vk::DescriptorPool d, vk::Device dev )
+    {
+        dev.destroyDescriptorPool(d);
+        m_createInfos.erase(d);
+    }
     void destroy( vk::Pipeline d, vk::Device dev)
     {
         dev.destroyPipeline(d);

@@ -24,6 +24,10 @@ public:
     {
     }
 
+    vkb::GraphicsPipelineCreateInfo2 const & currentCreateInfo() const
+    {
+        return m_cci;
+    }
     // returns the total number of pipelines
     // that have been created.
     size_t pipelineCount() const
@@ -75,6 +79,7 @@ public:
             m_cci     = m_storage->getCreateInfo<vkb::GraphicsPipelineCreateInfo2>( std::get<0>(p));
 
             m_pipelines[h] = p;
+            return p;
         }
         else
         {
