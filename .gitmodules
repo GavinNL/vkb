@@ -1,0 +1,3 @@
+[submodule "third_party/vkw"]
+	path = third_party/vkw
+	url = https://gitlab.com/gavinNL/vkw

@@ -48,8 +48,8 @@ foreach(file ${files})
                                     ${PROJECT_NAME}-catchmain 
                                     ${PROJECT_NAME}::warnings 
                                     CONAN_PKG::sdl2 
-                                    SDLVulkanWindow::SDLVulkanWindow 
-                                    vkb::vkb) 
+                                    vkb::vkb
+                                    vkw::vkw)
 
 
     add_test( NAME ${UNIT_TEST_NAME}

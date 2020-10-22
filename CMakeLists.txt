@@ -17,11 +17,7 @@ project( vkb
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-#######################################################################################
-# Custom targets so that these files show up in QtCreator for easy editing
-#######################################################################################
-add_custom_target(vbk_otherfiles SOURCES conanfile.txt .gitignore README.md)
-#######################################################################################
+
 
 
 ################################################################################
@@ -29,8 +25,8 @@ add_custom_target(vbk_otherfiles SOURCES conanfile.txt .gitignore README.md)
 # Extra targets.  adds coverage::coverage, warning::all, warning:error
 SET(PROJECT_TARGETS_PREFIX ${PROJECT_NAME})
 
-get_directory_property( _is_sub_project PARENT_DIRECTORY)
-if(_is_sub_project)
+get_directory_property( vkb_is_sub_project PARENT_DIRECTORY)
+if(vkb_is_sub_project)
 
     option( ${PROJECT_NAME}_ENABLE_COVERAGE "Enable Coverage."        FALSE)
     option( ${PROJECT_NAME}_ENABLE_WARNINGS "Enable Strict Warnings" FALSE)
@@ -42,6 +38,12 @@ else()
     option( ${PROJECT_NAME}_ENABLE_COVERAGE "Enable Coverage. "        TRUE)
     option( ${PROJECT_NAME}_ENABLE_WARNINGS "Enable Strict Warnings" TRUE)
     option( ${PROJECT_NAME}_ENABLE_TESTING  "Enable Unit Tests" TRUE)
+
+    #######################################################################################
+    # Custom targets so that these files show up in QtCreator for easy editing
+    #######################################################################################
+    add_custom_target(vbk_otherfiles SOURCES conanfile.txt .gitignore README.md)
+    #######################################################################################
 
 endif()
 ################################################################################
@@ -78,10 +80,9 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test" AND IS_DIRECTORY "${CMAKE_CURRENT_S
         # examples/unit tests
         ################################################################################
         find_package(Vulkan)
-        add_library(SDLVulkanWindow  third_party/SDLVulkanWindow/SDLVulkanWindow_INIT.cpp third_party/SDLVulkanWindow/SDLVulkanWindow_USAGE.cpp)
-        add_library(SDLVulkanWindow::SDLVulkanWindow ALIAS SDLVulkanWindow )
-        target_include_directories(SDLVulkanWindow PUBLIC "third_party/SDLVulkanWindow")
-        target_link_libraries(SDLVulkanWindow PUBLIC Vulkan::Vulkan CONAN_PKG::sdl2)
+
+        add_subdirectory(third_party/vkw)
+
         ################################################################################
 
 

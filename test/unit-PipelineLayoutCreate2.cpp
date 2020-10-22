@@ -4,7 +4,10 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_vulkan.h>
 
-#include <SDLVulkanWindow.h>
+#include <vkw/SDLVulkanWindow.h>
+#include <vkw/SDLVulkanWindow_INIT.inl>
+#include <vkw/SDLVulkanWindow_USAGE.inl>
+using namespace vkw;
 
 #include <vulkan/vulkan.hpp>
 
