@@ -58,7 +58,12 @@ struct Storage
     {
         dev.destroyPipeline(d);
     }
-
+    void destroy( vk::Sampler d, vk::Device dev)
+    {
+        dev.destroySampler(d);
+        _remove(d, samplers);
+        m_createInfos.erase(d);
+    }
     /**
      * @brief mapMemory
      * @param m
@@ -103,7 +108,10 @@ struct Storage
             d.destroyShaderModule(x.second);
         for(auto & x : renderPasses)
             d.destroyRenderPass(x.second);
+        for(auto & x : samplers)
+            d.destroySampler(x.second);
 
+        samplers.clear();
         descriptorSetLayouts.clear();
         pipelineLayouts.clear();
         shaderModules.clear();
@@ -166,6 +174,7 @@ public:
         m_createInfos[ static_cast<void*>(h) ] = std::move(c);
     }
 
+    std::map< size_t , vk::Sampler >             samplers;
     std::map< size_t , vk::DescriptorSetLayout > descriptorSetLayouts;
     std::map< size_t , vk::PipelineLayout >      pipelineLayouts;
     std::map< size_t , vk::ShaderModule>         shaderModules;
