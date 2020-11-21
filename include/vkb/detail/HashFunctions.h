@@ -3,6 +3,7 @@
 
 #include <vulkan/vulkan.hpp>
 #include <functional>
+#include <cstring>
 
 namespace vkb
 {
@@ -22,11 +23,13 @@ inline size_t hash_e(T v)
     return H( static_cast<size_t>(v));
 }
 
-template<typename Bits, typename Flags>
-inline size_t hash_f( vk::Flags<Bits,Flags>  c)
+template<typename ...Bits>
+inline size_t hash_f( vk::Flags<Bits...>  c)
 {
     static std::hash<size_t> H;
-    return H( static_cast<Flags>(c));
+    size_t v=0;
+    std::memcpy(&v,&c,sizeof(c));
+    return H(v);
 }
 
 template<typename T>
