@@ -248,7 +248,7 @@ struct TextureArrayDescriptorSetChain
                  vkb::Storage & storage,
                  TextureArrayDescriptorSetChainCreateInfo const & C)
     {
-        auto textureCount     = 0;//C.textureCount;
+        uint32_t textureCount     = 0u;
 
         //=================================================================
         // Create a single descriptor set layout which will
