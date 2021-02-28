@@ -87,6 +87,19 @@ public:
         }
     }
 
+    /**
+     * @brief bind
+     * @param cmd
+     *
+     * Binds the current pipeline, recompiling it if any
+     * of the creation info data has changed.
+     */
+    void bind(vk::CommandBuffer cmd)
+    {
+        auto p = get();
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, std::get<0>(p) );
+    }
+
 
     //==============================================================
     // the properties of thes can be modified
@@ -120,6 +133,10 @@ public:
     {
         m_cci.rasterizationState.setPolygonMode(p);
     }
+    void setRenderPass( vk::RenderPass p)
+    {
+        m_cci.renderPass = p;
+    }
 
 protected:
     // calcualte the hash based on the rasterization staate
@@ -130,6 +147,7 @@ protected:
 
         hash_c(seed, hash_pod(C.rasterizationState));
         hash_c(seed, hash_pod(C.inputAssemblyState));
+        hash_c(seed, hash_pod(C.renderPass) );
 
         return seed;
     }
