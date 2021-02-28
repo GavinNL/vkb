@@ -12,13 +12,10 @@ namespace vkb
 
 struct TextureArrayDescriptorSetCreateInfo
 {
-    size_t             textureCount;
-    vk::DescriptorSet  descriptorSet;
-    uint32_t           binding;
-
     // on creation, all textures in the set
     // will point to this value. It MUST always be valid
     // a simple white texture would sufffice.
+    size_t          textureCount;
     vk::Sampler     defaultSampler;
     vk::ImageView   defaultImageView;
     vk::ImageLayout defaultImageLayout;
@@ -49,7 +46,7 @@ struct TextureArrayDescriptorSet
         vk::ImageLayout layout;
     };
 
-    vk::DescriptorSet    m_DescriptorSet;
+    //vk::DescriptorSet    m_DescriptorSet;
     uint32_t             m_binding;
     std::vector<image_t> m_images;
     std::set<size_t>     m_dirty;
@@ -69,9 +66,6 @@ struct TextureArrayDescriptorSet
 
     void create(TextureArrayDescriptorSetCreateInfo const & C)
     {
-        m_binding = C.binding;
-        m_DescriptorSet = C.descriptorSet;
-
         m_default = { C.defaultSampler, C.defaultImageView, C.defaultImageLayout };
         m_images.insert( m_images.end(), C.textureCount, m_default);
         for(size_t i=0;i<m_images.size();i++)
@@ -138,12 +132,12 @@ struct TextureArrayDescriptorSet
      *
      * Update all the textures that have been marked dirty.
      */
-    void update(vkb::DescriptorSetUpdater & updater )
+    void update(vk::DescriptorSet set, uint32_t binding, vkb::DescriptorSetUpdater & updater)
     {
         for(auto & u : m_dirty)
         {
             std::tuple<vk::Sampler, vk::ImageView, vk::ImageLayout>  up= {m_images[u].sampler, m_images[u].view, m_images[u].layout};
-            updater.updateImageDescriptor( m_DescriptorSet, m_binding, static_cast<uint32_t>(u), vk::DescriptorType::eCombinedImageSampler, up );
+            updater.updateImageDescriptor( set, binding, static_cast<uint32_t>(u), vk::DescriptorType::eCombinedImageSampler, up );
         }
         m_dirty.clear();
     }
@@ -210,6 +204,9 @@ protected:
 
 struct TextureArrayDescriptorSetChainCreateInfo
 {
+    // the total number of descriptor sets
+    // you should probably aim to have more than
+    // your current swapchain count.
     uint32_t chainSize = 0;
 
     // on creation, all textures in the set
@@ -239,7 +236,7 @@ struct TextureArrayDescriptorSetChain
     vk::DescriptorSetLayout                     m_layout;
     vk::DescriptorPool                          m_pool;
     std::vector<vkb::TextureArrayDescriptorSet> m_TextureArrayChain;
-    std::vector<vkb::TextureArrayDescriptorSet> m_TextureCubeArrayChain;
+    std::vector<vk::DescriptorSet>              m_descriptorSets;
 
     void create( vk::Device device,
                  vkb::Storage & storage,
@@ -271,17 +268,18 @@ struct TextureArrayDescriptorSetChain
         }
 
         m_TextureArrayChain.resize(C.chainSize);
+
+        vk::DescriptorSetAllocateInfo a;
+        a.setPSetLayouts( &m_layout);
+        a.setDescriptorSetCount( 1);
+        a.setDescriptorPool(m_pool);
+
         for(auto & t : m_TextureArrayChain)
         {
-            vk::DescriptorSetAllocateInfo a;
-            a.setPSetLayouts( &m_layout);
-            a.setDescriptorSetCount(1);
-            a.setDescriptorPool(m_pool);
+            m_descriptorSets.push_back( device.allocateDescriptorSets(a).front() );
 
             vkb::TextureArrayDescriptorSetCreateInfo c;
             c.textureCount       = textureCount;
-            c.descriptorSet      = device.allocateDescriptorSets(a).front();
-            c.binding            = C.textureBinding;
             c.defaultImageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
             c.defaultSampler     = C.defaultSampler;
             c.defaultImageView   = C.defaultImageView;
@@ -297,10 +295,10 @@ struct TextureArrayDescriptorSetChain
     int32_t removeTexture( vk::ImageView v, vkb::DescriptorSetUpdater & updater)
     {
         int32_t s = -1;
-        for(auto & t : m_TextureArrayChain)
+        for(size_t i=0;i < m_TextureArrayChain.size();i++ )
         {
-            s = t.removeTexture( v );
-            t.update(updater);
+            s =  m_TextureArrayChain[i].removeTexture(v);
+            m_TextureArrayChain[i].update(m_descriptorSets[i], 0, updater);
         }
         return s;
     }
@@ -317,7 +315,7 @@ struct TextureArrayDescriptorSetChain
     size_t update( DescriptorSetUpdater & updater)
     {
         auto c = currentArray().dirtyCount();
-        currentArray().update(updater);
+        currentArray().update( currentDescriptorSet(), 0, updater);
         return c;
     }
     void nextArray()
@@ -328,7 +326,7 @@ struct TextureArrayDescriptorSetChain
 
     vk::DescriptorSet currentDescriptorSet() const
     {
-        return currentArray().m_DescriptorSet;
+        return m_descriptorSets[m_currentIndex];
     }
     vkb::TextureArrayDescriptorSet & currentArray()
     {
