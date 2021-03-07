@@ -314,6 +314,15 @@ struct TextureArrayDescriptorSetChain
     {
         storage.destroy(m_pool, device);
     }
+    int32_t removeTexture( vk::ImageView v, uint32_t binding)
+    {
+        int32_t s = -1;
+        for(size_t i=0;i < m_TextureArrayChain.size();i++ )
+        {
+            s =  m_TextureArrayChain[i][binding].removeTexture(v);
+        }
+        return s;
+    }
     int32_t removeTexture( vk::ImageView v, uint32_t binding, vkb::DescriptorSetUpdater & updater)
     {
         int32_t s = -1;
