@@ -7,6 +7,7 @@
 #include "ShaderModuleCreateInfo2.h"
 #include "PipelineLayoutCreateInfo2.h"
 #include "RenderPassCreateInfo2.h"
+#include <fstream>
 
 namespace vkb
 {
