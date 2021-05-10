@@ -82,6 +82,8 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
     PCI.setVertexInputBinding(1,stride, vk::VertexInputRate::eVertex);
     PCI.setVertexInputBinding(2,stride, vk::VertexInputRate::eVertex);
 
+    PCI.inputAssemblyState.setTopology( vk::PrimitiveTopology::eTriangleList);
+
     // shader stages
     PCI.addStage( vk::ShaderStageFlagBits::eVertex, "main", CMAKE_SOURCE_DIR "/share/shaders/vert.spv");
     PCI.addStage( vk::ShaderStageFlagBits::eFragment, "main", CMAKE_SOURCE_DIR "/share/shaders/frag.spv");
@@ -101,15 +103,39 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
 
 
 
+    {
+        auto pci = PCI;
+
+        auto H = vkb::hash<vkb::GraphicsPipelineCreateInfo2>();
+
+        pci.inputAssemblyState.setTopology(vk::PrimitiveTopology::eTriangleList);
+
+        auto h1 = H(pci);
+
+        pci.inputAssemblyState.setTopology(vk::PrimitiveTopology::eLineList);
+
+        auto h2 = H(pci);
+
+        pci.inputAssemblyState.setTopology(vk::PrimitiveTopology::eTriangleList);
+
+        auto h3 = H(pci);
+
+        REQUIRE( h1 != h2);
+        REQUIRE( h1 == h3);
+    }
     vkb::DynamicPipeline dP;
 
     // Initialize the dynamic pipeline with a particular state
     dP.init(&S, PCI, window->getDevice());
 
-    REQUIRE( dP.pipelineCount() == 1);
+    dP.setTopology( vk::PrimitiveTopology::eTriangleList );
+
+    REQUIRE( dP.pipelineCount() == 0);
 
     // get the current pipeline
     auto x = dP.get();
+
+    REQUIRE( dP.pipelineCount() == 1);
 
     dP.setTopology( vk::PrimitiveTopology::eLineList );
 
@@ -123,6 +149,9 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
     dP.setTopology( vk::PrimitiveTopology::eTriangleList);
 
     auto z = dP.get();
+
+    REQUIRE( dP.pipelineCount() == 2);
+
     REQUIRE( std::get<0>(x) == std::get<0>(z) );
     REQUIRE( dP.pipelineCount() == 2);
 

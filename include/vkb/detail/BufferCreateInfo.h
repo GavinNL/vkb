@@ -1,5 +1,5 @@
-#ifndef VKJSON_BUFFERCREATEINFO2_H
-#define VKJSON_BUFFERCREATEINFO2_H
+#ifndef VKB_BUFFERCREATEINFO2_H
+#define VKB_BUFFERCREATEINFO2_H
 
 #include <vulkan/vulkan.hpp>
 #include <functional>

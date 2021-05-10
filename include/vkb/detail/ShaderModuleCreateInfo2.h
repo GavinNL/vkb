@@ -1,5 +1,5 @@
-#ifndef VKJSON_SHADERMODULECREATEINFO_H
-#define VKJSON_SHADERMODULECREATEINFO_H
+#ifndef VKB_SHADERMODULECREATEINFO_H
+#define VKB_SHADERMODULECREATEINFO_H
 
 #include <vulkan/vulkan.hpp>
 #include <functional>

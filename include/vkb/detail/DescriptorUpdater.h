@@ -1,5 +1,5 @@
-#ifndef VKJSON_WRITEDESCRIPTORSET2_H
-#define VKJSON_WRITEDESCRIPTORSET2_H
+#ifndef VKB_WRITEDESCRIPTORSET2_H
+#define VKB_WRITEDESCRIPTORSET2_H
 
 #include <vulkan/vulkan.hpp>
 #include <functional>

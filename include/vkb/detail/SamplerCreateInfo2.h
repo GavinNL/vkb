@@ -1,5 +1,5 @@
-#ifndef VKJSON_SAMPLERCREATEINFO2_H
-#define VKJSON_SAMPLERCREATEINFO2_H
+#ifndef VKB_SAMPLERCREATEINFO2_H
+#define VKB_SAMPLERCREATEINFO2_H
 
 #include <vulkan/vulkan.hpp>
 #include <functional>

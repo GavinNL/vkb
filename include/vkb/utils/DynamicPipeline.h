@@ -1,11 +1,13 @@
 #ifndef VKB_DYNAMICPIPELINE_H
 #define VKB_DYNAMICPIPELINE_H
 
+#include <iostream>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <iterator>
 #include "../detail/PipelineCreateInfo2.h"
+#include "../detail/HashFunctions.h"
 
 namespace vkb
 {
@@ -58,18 +60,21 @@ public:
     {
         m_device  = device;
         m_storage = S;
+
         // compile the initial pipeline.
-        auto p = C.create(*m_storage, device);
+        //auto p = C.create(*m_storage, device);
 
-        m_cci     = m_storage->getCreateInfo<vkb::GraphicsPipelineCreateInfo2>( std::get<0>(p));
+        m_cci     = C;//
+        //m_cci     = m_storage->getCreateInfo<vkb::GraphicsPipelineCreateInfo2>( std::get<0>(p));
 
-        auto h = _hash(m_cci);
-        m_pipelines[h] = p;
+        //std::hash<vkb::GraphicsPipelineCreateInfo2> H;
+        //auto h = H(m_cci);
+        //m_pipelines[h] = p;
     }
 
     value_type get()
     {
-        auto h = _hash(m_cci);
+        auto h = _hash(m_cci);//hash_t(m_cci);
         auto f = m_pipelines.find(h);
 
         if( f == m_pipelines.end() )
@@ -141,20 +146,25 @@ public:
 protected:
     // calcualte the hash based on the rasterization staate
     // and the input assembly.
-    static size_t _hash(vkb::GraphicsPipelineCreateInfo2 const & C)
+    size_t _hash(vkb::GraphicsPipelineCreateInfo2 const & C) const
     {
-        size_t seed = 0x9e3779b9;
-
-        hash_c(seed, hash_pod(C.rasterizationState));
-        hash_c(seed, hash_pod(C.inputAssemblyState));
-        hash_c(seed, hash_pod(C.renderPass) );
+        auto seed = hash_t(C.rasterizationState);
+        seed = hash_combine(seed, hash_t(C.inputAssemblyState));
+        seed = hash_combine(seed, hash_t(C.blendState));
+        seed = hash_combine(seed, hash_t(C.vertexInputState));
 
         return seed;
     }
-
-
-
 };
+
+
+}
+
+
+namespace vkb
+{
+
+
 
 }
 

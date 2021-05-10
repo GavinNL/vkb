@@ -1,5 +1,5 @@
-#ifndef VKJSON_MEMORYALLOC_H
-#define VKJSON_MEMORYALLOC_H
+#ifndef VKB_MEMORYALLOC_H
+#define VKB_MEMORYALLOC_H
 
 #include <vulkan/vulkan.hpp>
 #include <functional>

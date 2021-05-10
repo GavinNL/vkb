@@ -1,5 +1,5 @@
-#ifndef VKJSON_PIPELINECREATEINFO2_H
-#define VKJSON_PIPELINECREATEINFO2_H
+#ifndef VKB_PIPELINECREATEINFO2_H
+#define VKB_PIPELINECREATEINFO2_H
 
 #include <vulkan/vulkan.hpp>
 
@@ -12,6 +12,54 @@
 namespace vkb
 {
 
+template<>
+struct hash<vk::Viewport>
+{
+    size_t operator()(vk::Viewport const &v) const
+    {
+        auto seed = hash_t(v.height);
+        seed = hash_combine(seed, hash_t(v.width))  ;
+        seed = hash_combine(seed, hash_t(v.maxDepth))  ;
+        seed = hash_combine(seed, hash_t(v.minDepth))  ;
+        seed = hash_combine(seed, hash_t(v.x))  ;
+        seed = hash_combine(seed, hash_t(v.y))  ;
+        return seed;
+    }
+};
+
+template<>
+struct hash<vk::Extent2D>
+{
+    size_t operator()(vk::Extent2D const &v) const
+    {
+        auto seed = hash_t(v.height);
+        seed = hash_combine(seed, hash_t(v.width))  ;
+        return seed;
+    }
+};
+
+template<>
+struct hash<vk::Offset2D>
+{
+    size_t operator()(vk::Offset2D const &v) const
+    {
+        auto seed = hash_t(v.x);
+        seed = hash_combine(seed, hash_t(v.y))  ;
+        return seed;
+    }
+};
+
+template<>
+struct hash<vk::Rect2D>
+{
+    size_t operator()(vk::Rect2D const &v) const
+    {
+        auto seed = hash_t(v.extent);
+        seed = hash_combine(seed, hash_t(v.offset))  ;
+        return seed;
+    }
+};
+
 struct PipelineShaderStageCreateInfo2
 {
     std::string             name;
@@ -19,36 +67,66 @@ struct PipelineShaderStageCreateInfo2
 
     vk::ShaderModule        module;
     std::vector<uint32_t>   code; // if given, the PipelineCreateInfo2 will generate the shader module
+};
 
-    size_t hash() const
+template<>
+struct hash<PipelineShaderStageCreateInfo2>
+{
+    size_t operator()(PipelineShaderStageCreateInfo2 const &v) const
     {
         std::hash<std::string> Hs;
         std::hash<void const*> Hv;
 
-        auto seed = Hs(name);
-        hash_c(seed, hash_e(stage));
-        hash_c(seed, Hv(static_cast<void const*>(module)));
+        auto seed = Hs(v.name);
+        seed = hash_combine(seed, hash_t(v.stage));
+        seed = hash_combine(seed, Hv(static_cast<void const*>(v.module)));
         return seed;
     }
+};
 
+template<>
+struct hash<vk::VertexInputBindingDescription>
+{
+    size_t operator()(vk::VertexInputBindingDescription const &v) const
+    {
+        auto seed = hash_t(v.binding);
+        seed = hash_combine(seed, hash_t(v.stride) );
+        seed = hash_combine(seed, hash_t(v.inputRate) );
+
+        return seed;
+    }
+};
+
+template<>
+struct hash<vk::VertexInputAttributeDescription>
+{
+    size_t operator()(vk::VertexInputAttributeDescription const &v) const
+    {
+        auto seed = hash_t(v.binding);
+
+        seed = hash_combine(seed, hash_t(v.location) );
+        seed = hash_combine(seed, hash_t(v.offset) );
+        seed = hash_combine(seed, hash_t(v.format) );
+
+        return seed;
+    }
 };
 
 struct PipelineViewportStateCreateInfo2
 {
     std::vector< vk::Viewport>   viewports;
     std::vector< vk::Rect2D>     scissors;
+};
 
-    size_t hash() const
+template<>
+struct hash<PipelineViewportStateCreateInfo2>
+{
+    size_t operator()(PipelineViewportStateCreateInfo2 const &v) const
     {
-        size_t seed = 0x9e3779b9;
-        for(auto & v : scissors)
-        {
-            hash_c(seed, hash_pod(v));
-        }
-        for(auto & v : scissors)
-        {
-            hash_c(seed, hash_pod(v));
-        }
+        auto seed = hash_t(v.viewports);
+
+        seed = hash_combine(seed, hash_t(v.scissors) );
+
         return seed;
     }
 };
@@ -57,18 +135,36 @@ struct PipelineVertexInputStateCreateInfo2
 {
     std::vector< vk::VertexInputBindingDescription>   vertexBindingDescriptions;
     std::vector< vk::VertexInputAttributeDescription> vertexAttributeDescriptions;
+};
 
-    size_t hash() const
+template<>
+struct hash<PipelineVertexInputStateCreateInfo2>
+{
+    size_t operator()(PipelineVertexInputStateCreateInfo2 const &v) const
     {
-        size_t seed = 0x9e3779b9;
-        for(auto & v : vertexBindingDescriptions)
-        {
-            hash_c(seed, hash_pod(v));
-        }
-        for(auto & v : vertexAttributeDescriptions)
-        {
-            hash_c(seed, hash_pod(v));
-        }
+        auto seed = hash_t(v.vertexBindingDescriptions);
+
+        seed = hash_combine(seed, hash_t(v.vertexAttributeDescriptions) );
+
+        return seed;
+    }
+};
+
+template<>
+struct hash<vk::PipelineColorBlendAttachmentState>
+{
+    size_t operator()(vk::PipelineColorBlendAttachmentState const &v) const
+    {
+        auto seed = hash_t(v.alphaBlendOp);
+
+        seed = hash_combine(seed, hash_t(v.blendEnable) );
+        seed = hash_combine(seed, hash_t(v.colorBlendOp) );
+        seed = hash_combine(seed, hash_t(static_cast<VkColorComponentFlags>(v.colorWriteMask) ) );
+        seed = hash_combine(seed, hash_t(v.dstAlphaBlendFactor) );
+        seed = hash_combine(seed, hash_t(v.dstColorBlendFactor) );
+        seed = hash_combine(seed, hash_t(v.srcAlphaBlendFactor) );
+        seed = hash_combine(seed, hash_t(v.srcColorBlendFactor) );
+
         return seed;
     }
 };
@@ -82,24 +178,118 @@ struct PipelineColorBlendStateCreateInfo2
     vk::LogicOp logicOp = vk::LogicOp::eClear;
 
     float blendConstants[4] = {};
+};
 
-    size_t hash() const
+template<>
+struct hash<PipelineColorBlendStateCreateInfo2>
+{
+    size_t operator()(PipelineColorBlendStateCreateInfo2 const &v) const
     {
-        std::hash<vk::Bool32> H;
         std::hash<float> Hf;
 
         size_t seed = 0x9e3779b9;
-        hash_c(seed, hash_f(flags));
-        hash_c(seed, hash_e(logicOp));
-        hash_c(seed, H(logicOpEnable));
-        for(auto & v : attachments)
-        {
-            hash_c( seed, hash_pod(v));
-        }
-        hash_c(seed, Hf(blendConstants[0]) );
-        hash_c(seed, Hf(blendConstants[1]) );
-        hash_c(seed, Hf(blendConstants[2]) );
-        hash_c(seed, Hf(blendConstants[3]) );
+        seed = hash_combine(seed, hash_t( static_cast<VkPipelineColorBlendStateCreateFlags>(v.flags) ));
+        seed = hash_combine(seed, hash_t(v.logicOp));
+        seed = hash_combine(seed, hash_t(v.logicOpEnable));
+        seed = hash_combine(seed, hash_t(v.attachments));
+
+        seed = hash_combine(seed, Hf(v.blendConstants[0]) );
+        seed = hash_combine(seed, Hf(v.blendConstants[1]) );
+        seed = hash_combine(seed, Hf(v.blendConstants[2]) );
+        seed = hash_combine(seed, Hf(v.blendConstants[3]) );
+        return seed;
+    }
+};
+
+template<>
+struct hash<vk::PipelineRasterizationStateCreateInfo>
+{
+    size_t operator()(vk::PipelineRasterizationStateCreateInfo const &v) const
+    {
+        auto seed = hash_t(v.depthClampEnable);
+        seed = hash_combine(seed, hash_t(v.rasterizerDiscardEnable));
+        seed = hash_combine(seed, hash_t(v.polygonMode));
+        seed = hash_combine(seed, hash_t(static_cast<VkCullModeFlags>(v.cullMode) ));
+        seed = hash_combine(seed, hash_t(v.frontFace));
+        seed = hash_combine(seed, hash_t(v.depthBiasEnable));
+        seed = hash_combine(seed, hash_t(v.depthBiasConstantFactor));
+        seed = hash_combine(seed, hash_t(v.depthBiasClamp));
+        seed = hash_combine(seed, hash_t(v.depthBiasSlopeFactor));
+        seed = hash_combine(seed, hash_t(v.lineWidth));
+
+        return seed;
+    }
+};
+
+template<>
+struct hash<vk::PipelineMultisampleStateCreateInfo>
+{
+    size_t operator()(vk::PipelineMultisampleStateCreateInfo const &v) const
+    {
+        auto seed = hash_t(v.alphaToCoverageEnable);
+        seed = hash_combine(seed, hash_t(v.alphaToOneEnable));
+        seed = hash_combine(seed, hash_t(v.minSampleShading));
+        seed = hash_combine(seed, hash_t(v.rasterizationSamples));
+        seed = hash_combine(seed, hash_t(v.sampleShadingEnable));
+
+        return seed;
+    }
+};
+
+template<>
+struct hash<vk::StencilOpState>
+{
+    size_t operator()(vk::StencilOpState const &v) const
+    {
+        auto seed = hash_t(v.failOp);
+        seed = hash_combine(seed, hash_t(v.passOp));
+        seed = hash_combine(seed, hash_t(v.depthFailOp));
+        seed = hash_combine(seed, hash_t(v.compareOp));
+        seed = hash_combine(seed, hash_t(v.compareMask));
+        seed = hash_combine(seed, hash_t(v.writeMask));
+        seed = hash_combine(seed, hash_t(v.reference));
+
+        return seed;
+    }
+};
+
+template<>
+struct hash<vk::PipelineDepthStencilStateCreateInfo>
+{
+    size_t operator()(vk::PipelineDepthStencilStateCreateInfo const &v) const
+    {
+        auto seed = hash_t(v.depthTestEnable);
+        seed = hash_combine(seed, hash_t(v.depthWriteEnable));
+        seed = hash_combine(seed, hash_t(v.depthCompareOp));
+        seed = hash_combine(seed, hash_t(v.depthBoundsTestEnable));
+        seed = hash_combine(seed, hash_t(v.stencilTestEnable));
+        seed = hash_combine(seed, hash_t(v.front));
+        seed = hash_combine(seed, hash_t(v.back));
+        seed = hash_combine(seed, hash_t(v.minDepthBounds));
+        seed = hash_combine(seed, hash_t(v.maxDepthBounds));
+
+        return seed;
+    }
+};
+
+template<>
+struct hash<vk::PipelineInputAssemblyStateCreateInfo>
+{
+    size_t operator()(vk::PipelineInputAssemblyStateCreateInfo const &v) const
+    {
+        auto seed = hash_t(v.topology);
+        seed = hash_combine(seed, hash_t(v.primitiveRestartEnable));
+
+        return seed;
+    }
+};
+
+template<>
+struct hash<vk::PipelineTessellationStateCreateInfo>
+{
+    size_t operator()(vk::PipelineTessellationStateCreateInfo const &v) const
+    {
+        auto seed = hash_t(v.patchControlPoints);
         return seed;
     }
 };
@@ -298,48 +488,6 @@ struct GraphicsPipelineCreateInfo2
         return x;
     }
 
-    size_t hash() const
-    {
-        size_t seed = 0x9e3779b9;
-
-        for(auto & s : stages)
-            hash_c(seed, s.hash() );
-
-        hash_c(seed, blendState.hash());
-        hash_c(seed, vertexInputState.hash());
-        hash_c(seed, hash_pod(rasterizationState));
-        hash_c(seed, hash_pod(multisampleState));
-        hash_c(seed, hash_pod(depthStencilState));
-        hash_c(seed, hash_pod(inputAssemblyState));
-        for(auto & v : dynamicStates)
-            hash_c(seed, hash_e(v) );
-
-        hash_c( seed, viewportState.hash());
-        hash_c(seed, hash_pod(tessellation));
-
-        std::hash<void const*> Hv;
-        if( std::holds_alternative<vk::PipelineLayout>(layout) )
-        {
-            hash_c(seed, Hv( static_cast<void const*>( std::get<vk::PipelineLayout>(layout))));
-        }
-        else
-        {
-            hash_c(seed, std::get<vkb::PipelineLayoutCreateInfo2>(layout).hash() );
-        }
-
-        if( std::holds_alternative<vk::RenderPass>(renderPass) )
-        {
-            hash_c(seed, Hv( static_cast<void const*>( std::get<vk::RenderPass>(renderPass))));
-        }
-        else
-        {
-            hash_c(seed, std::get<vkb::RenderPassCreateInfo2>(renderPass).hash() );
-        }
-
-        return seed;
-    }
-
-
     //=====================================================================
     // Helper Functions
     //=====================================================================
@@ -396,6 +544,47 @@ struct GraphicsPipelineCreateInfo2
     }
 };
 
+template<>
+struct hash<vkb::GraphicsPipelineCreateInfo2>
+{
+    size_t operator()(vkb::GraphicsPipelineCreateInfo2 const & C) const
+    {
+        auto seed = hash_t(C.stages);
+
+        seed = hash_combine(seed, hash_t(C.blendState));
+        seed = hash_combine(seed, hash_t(C.vertexInputState) );
+        seed = hash_combine(seed, hash_t(C.rasterizationState));
+        seed = hash_combine(seed, hash_t(C.multisampleState));
+        seed = hash_combine(seed, hash_t(C.depthStencilState));
+        seed = hash_combine(seed, hash_t(C.inputAssemblyState));
+
+        seed = hash_combine(seed, hash_t(C.dynamicStates));
+
+        seed = hash_combine(seed, hash_t(C.viewportState) );
+        seed = hash_combine(seed, hash_t(C.tessellation) );
+
+        std::hash<void const*> Hv;
+        if( std::holds_alternative<vk::PipelineLayout>(C.layout) )
+        {
+            seed = hash_combine(seed, Hv( static_cast<void const*>( std::get<vk::PipelineLayout>(C.layout))));
+        }
+        else
+        {
+            seed = hash_combine(seed, std::get<vkb::PipelineLayoutCreateInfo2>(C.layout).hash() );
+        }
+
+        if( std::holds_alternative<vk::RenderPass>(C.renderPass) )
+        {
+            seed = hash_combine(seed, Hv( static_cast<void const*>( std::get<vk::RenderPass>(C.renderPass))));
+        }
+        else
+        {
+            seed = hash_combine(seed, std::get<vkb::RenderPassCreateInfo2>(C.renderPass).hash() );
+        }
+
+        return seed;
+    }
+};
 
 }
 

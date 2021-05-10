@@ -1,5 +1,5 @@
-#ifndef VKJSON_RENDERPASSCREATEINFO2_H
-#define VKJSON_RENDERPASSCREATEINFO2_H
+#ifndef VKB_RENDERPASSCREATEINFO2_H
+#define VKB_RENDERPASSCREATEINFO2_H
 
 #include <vulkan/vulkan.hpp>
 #include <functional>

@@ -1,5 +1,5 @@
-#ifndef VKJSON_STORAGE_H
-#define VKJSON_STORAGE_H
+#ifndef VKB_STORAGE_H
+#define VKB_STORAGE_H
 
 #include <vulkan/vulkan.hpp>
 #include <typeindex>
