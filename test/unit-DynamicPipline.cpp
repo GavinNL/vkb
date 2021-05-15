@@ -73,10 +73,10 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
     PCI.viewportState.scissors.emplace_back( vk::Rect2D( {0,0}, {1024,768}));
 
     // vertex inputs
-    uint32_t stride=0+12+24;
-    PCI.setVertexInputAttribute(0,0,vk::Format::eR32G32B32Sfloat,0 );
-    PCI.setVertexInputAttribute(1,1,vk::Format::eR32G32B32Sfloat,12);
-    PCI.setVertexInputAttribute(2,2,vk::Format::eR8G8B8A8Unorm  ,24);
+    uint32_t stride=4+12+12;
+    PCI.setVertexInputAttribute(0,0,vk::Format::eR8G8B8A8Unorm  ,0);
+    PCI.setVertexInputAttribute(1,0,vk::Format::eR32G32B32Sfloat,4 );
+    PCI.setVertexInputAttribute(2,0,vk::Format::eR32G32B32Sfloat,16);
 
     PCI.setVertexInputBinding(0,stride, vk::VertexInputRate::eVertex);
     PCI.setVertexInputBinding(1,stride, vk::VertexInputRate::eVertex);
@@ -155,6 +155,22 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
     REQUIRE( std::get<0>(x) == std::get<0>(z) );
     REQUIRE( dP.pipelineCount() == 2);
 
+
+    {
+        dP.disableVertexAttribute(2);
+
+        auto q1 = dP.get();
+
+        (void)q1;
+        REQUIRE( dP.pipelineCount() == 3);
+
+        dP.enableVertexAttribute(2, 0, vk::Format::eR32G32B32Sfloat, 16);
+
+        auto q2 = dP.get();
+
+        REQUIRE( dP.pipelineCount() == 3);
+        REQUIRE( std::get<0>(q2) == std::get<0>(x) );
+    }
     dP.destroy();
 
     REQUIRE( dP.pipelineCount() == 0);
