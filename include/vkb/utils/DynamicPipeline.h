@@ -20,6 +20,8 @@ protected:
     std::map< size_t, value_type >   m_pipelines;
     vkb::Storage                    *m_storage = nullptr;
     vk::Device                       m_device;
+    size_t                           m_currentHash=0;
+    bool                             m_changed=true;
 
 public:
     DynamicPipeline()
@@ -30,8 +32,14 @@ public:
     {
         return m_cci;
     }
-    // returns the total number of pipelines
-    // that have been created.
+
+    /**
+     * @brief pipelineCount
+     * @return
+     *
+     * Returns the total number of pipelines
+     * that have been created
+     */
     size_t pipelineCount() const
     {
         return m_pipelines.size();
@@ -94,35 +102,44 @@ public:
      */
     value_type get()
     {
+        if( m_changed)
         {
-            auto & V = m_cci.vertexInputState.vertexAttributeDescriptions;
-            auto & B = m_cci.vertexInputState.vertexBindingDescriptions;
-
-            std::sort(V.begin(), V.end(), [](auto & A, auto & C)
             {
-                return A.location < C.location;
-            });
-            std::sort(B.begin(), B.end(), [](auto & A, auto & C)
-            {
-                return A.binding < C.binding;
-            });
-        }
-        auto h = _hash(m_cci);//hash_t(m_cci);
-        auto f = m_pipelines.find(h);
+                auto & V = m_cci.vertexInputState.vertexAttributeDescriptions;
+                auto & B = m_cci.vertexInputState.vertexBindingDescriptions;
 
-        if( f == m_pipelines.end() )
-        {
-            auto p = m_cci.create(*m_storage, m_device);
+                std::sort(V.begin(), V.end(), [](auto & A, auto & C)
+                {
+                    return A.location < C.location;
+                });
+                std::sort(B.begin(), B.end(), [](auto & A, auto & C)
+                {
+                    return A.binding < C.binding;
+                });
 
-            m_cci     = m_storage->getCreateInfo<vkb::GraphicsPipelineCreateInfo2>( std::get<0>(p));
+                auto h = _hash(m_cci);//hash_t(m_cci);
+                auto f = m_pipelines.find(h);
+                m_currentHash = h;
+                m_changed = false;
+                if( f == m_pipelines.end() )
+                {
+                    auto p = m_cci.create(*m_storage, m_device);
 
-            m_pipelines[h] = p;
-            return p;
+                    m_cci     = m_storage->getCreateInfo<vkb::GraphicsPipelineCreateInfo2>( std::get<0>(p));
+
+                    m_pipelines[h] = p;
+                    m_currentHash = h;
+                    return p;
+                }
+                else
+                {
+                    return f->second;
+                }
+            }
         }
-        else
-        {
-            return f->second;
-        }
+
+        return m_pipelines[m_currentHash];
+
     }
 
     /**
@@ -158,61 +175,57 @@ public:
     void setTopology( vk::PrimitiveTopology p )
     {
         m_cci.inputAssemblyState.setTopology(p);
+        m_changed = true;
     }
     void setCullMode( vk::CullModeFlags p )
     {
         m_cci.rasterizationState.setCullMode(p);
+        m_changed = true;
     }
     void setFrontFace( vk::FrontFace p )
     {
         m_cci.rasterizationState.setFrontFace(p);
+        m_changed = true;
     }
     void setPolygonMode( vk::PolygonMode p )
     {
         m_cci.rasterizationState.setPolygonMode(p);
+        m_changed = true;
     }
     void setRenderPass( vk::RenderPass p)
     {
         m_cci.renderPass = p;
+        m_changed = true;
     }
     void setDepthBiasEnable(bool t)
     {
         m_cci.rasterizationState.setDepthBiasEnable(t);
+        m_changed = true;
     }
     void setDepthBiasConstantFactor(float t)
     {
         m_cci.rasterizationState.setDepthBiasConstantFactor(t);
+        m_changed = true;
     }
     void setDepthBiasClamp(float t)
     {
         m_cci.rasterizationState.setDepthBiasClamp(t);
+        m_changed = true;
     }
     void setDepthBiasSlopeFactor(float t)
     {
         m_cci.rasterizationState.setDepthBiasSlopeFactor(t);
+        m_changed = true;
     }
     void enableVertexAttribute(uint32_t location, uint32_t binding, vk::Format format, uint32_t offset )
     {
-        auto & V = enableVertexAttribute(location);
+        auto & V = _enableVertexAttribute(location);
         V.binding  = binding;
         V.format   = format;
         V.offset   = offset;
+        m_changed = true;
     }
-    vk::VertexInputAttributeDescription & enableVertexAttribute(uint32_t location)
-    {
-        auto & v = m_cci.vertexInputState.vertexAttributeDescriptions;
-        auto it = std::find_if( v.begin(), v.end(), [location](vk::VertexInputAttributeDescription const & A)
-        {
-            return A.location == location;
-        });
-        if( it == v.end())
-        {
-            auto & XX =  v.emplace_back();
-            XX.location = location;
-            return XX;
-        }
-        return *it;
-    }
+
     void disableVertexAttribute(uint32_t location)
     {
         auto & v = m_cci.vertexInputState.vertexAttributeDescriptions;
@@ -224,6 +237,7 @@ public:
         {
             v.erase(it);
         }
+        m_changed = true;
     }
 
 
@@ -238,7 +252,9 @@ public:
         {
             v.erase(it);
         }
+        m_changed = true;
     }
+
     void enableVertexInputBinding(uint32_t binding, uint32_t stride, vk::VertexInputRate rate)
     {
         auto & v = m_cci.vertexInputState.vertexBindingDescriptions;
@@ -258,7 +274,7 @@ public:
         XX->binding   = binding;
         XX->stride    = stride;
         XX->inputRate = rate;
-
+        m_changed = true;
     }
     //==============================================================
 
@@ -273,6 +289,22 @@ protected:
         seed = hash_combine(seed, hash_t(C.vertexInputState));
 
         return seed;
+    }
+
+    vk::VertexInputAttributeDescription & _enableVertexAttribute(uint32_t location)
+    {
+        auto & v = m_cci.vertexInputState.vertexAttributeDescriptions;
+        auto it = std::find_if( v.begin(), v.end(), [location](vk::VertexInputAttributeDescription const & A)
+        {
+            return A.location == location;
+        });
+        if( it == v.end())
+        {
+            auto & XX =  v.emplace_back();
+            XX.location = location;
+            return XX;
+        }
+        return *it;
     }
 };
 
