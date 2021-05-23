@@ -500,20 +500,27 @@ struct GraphicsPipelineCreateInfo2
         vertexInputState.vertexBindingDescriptions.emplace_back( vk::VertexInputBindingDescription(binding,stride,rate));
     }
 
-    void addStage(vk::ShaderStageFlagBits stage, std::string entryPoint, std::string path)
+    void addStage(vk::ShaderStageFlagBits stage, std::string entryPoint, std::vector<uint32_t> const & spvCode)
     {
         auto & c = stages.emplace_back();
 
         c.name = entryPoint;
         c.stage = stage;
+        c.code = spvCode;
+    }
 
+    void addStage(vk::ShaderStageFlagBits stage, std::string entryPoint, std::string path)
+    {
         {
             std::ifstream stream(path, std::ios::in | std::ios::binary);
             std::vector<char> contents((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
 
+            std::vector<uint32_t> code;
             assert( contents.size() % sizeof(uint32_t) == 0);
-            c.code.resize( contents.size() / sizeof(uint32_t));
-            std::memcpy( c.code.data(), contents.data(), contents.size());
+            code.resize( contents.size() / sizeof(uint32_t));
+            std::memcpy( code.data(), contents.data(), contents.size());
+
+            addStage(stage, entryPoint, code);
         }
     }
 
