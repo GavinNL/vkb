@@ -20,14 +20,6 @@ struct is_std_vector<std::vector<T,A>> : std::true_type {};
 //--------------------------------------------
 
 
-//--------------------------------------------
-template<typename>
-struct is_flags : std::false_type {};
-
-template<typename T, typename A>
-struct is_flags<vk::Flags<T,A>> : std::true_type {};
-//--------------------------------------------
-
 inline size_t hash_combine(std::size_t seed, size_t v)
 {
     seed ^= v + 0x9e3779b9 + (seed<<6) + (seed>>2);
@@ -88,12 +80,24 @@ inline size_t hash_e(T v)
     return H( static_cast<size_t>(v));
 }
 
-template<typename ...Bits>
-inline size_t hash_f( vk::Flags<Bits...>  c)
+#if VK_HEADER_VERSION == 154
+
+template<typename BitType>
+inline size_t hash_f( vk::Flags<BitType> c)
 {
+    (void)c;
     std::hash<size_t> H;
-    return H( static_cast<size_t>(static_cast<VkFlags>(c)) );
+    return H( static_cast<size_t>(static_cast<typename vk::Flags<BitType>::MaskType>(c)) );
 }
+#elif VK_HEADER_VERSION <= 131
+template<typename BitType, typename MaskType>
+inline size_t hash_f( vk::Flags<BitType, MaskType> c)
+{
+    (void)c;
+    std::hash<size_t> H;
+    return H( static_cast<size_t>(static_cast<MaskType>(c)) );
+}
+#endif
 
 template<typename T>
 inline size_t hash_pod(T const & v)
