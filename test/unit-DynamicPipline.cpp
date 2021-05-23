@@ -61,7 +61,7 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
     // swapchain. This will allocate any internal
     // images which depend on the size of the swapchain (eg: gBuffers)
     auto e = window->getSwapchainExtent();
-
+    (void)e;
 
     vkb::Storage S;
 

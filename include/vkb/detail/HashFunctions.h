@@ -80,8 +80,7 @@ inline size_t hash_e(T v)
     return H( static_cast<size_t>(v));
 }
 
-#if VK_HEADER_VERSION == 154
-
+#if VK_HEADER_VERSION >= 154
 template<typename BitType>
 inline size_t hash_f( vk::Flags<BitType> c)
 {

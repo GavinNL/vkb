@@ -2,7 +2,7 @@
 #define VKB_PIPELINECREATEINFO2_H
 
 #include <vulkan/vulkan.hpp>
-
+#include <vulkan/vulkan.h>
 #include "HashFunctions.h"
 #include "ShaderModuleCreateInfo2.h"
 #include "PipelineLayoutCreateInfo2.h"
@@ -427,7 +427,11 @@ struct GraphicsPipelineCreateInfo2
     {
         return create_t( [d](base_create_info_type & C)
         {
+            #if VK_HEADER_VERSION >= 154
+            return  d.createGraphicsPipeline(vk::PipelineCache(), C).value;
+            #elif VK_HEADER_VERSION <= 131 // ubuntu 20.04
             return  d.createGraphicsPipeline(vk::PipelineCache(), C);
+            #endif
         });
     }
 
