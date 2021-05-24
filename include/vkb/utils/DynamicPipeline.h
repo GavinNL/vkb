@@ -149,10 +149,11 @@ public:
      * Binds the current pipeline, recompiling it if any
      * of the creation info data has changed.
      */
-    void bind(vk::CommandBuffer cmd)
+    value_type bind(vk::CommandBuffer cmd)
     {
         auto p = get();
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, std::get<0>(p) );
+        return p;
     }
 
 
