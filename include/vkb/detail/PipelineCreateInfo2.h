@@ -7,6 +7,7 @@
 #include "ShaderModuleCreateInfo2.h"
 #include "PipelineLayoutCreateInfo2.h"
 #include "RenderPassCreateInfo2.h"
+#include "PipelineShaderStageCreateInfo2.h"
 #include <fstream>
 
 namespace vkb
@@ -56,30 +57,6 @@ struct hash<vk::Rect2D>
     {
         auto seed = hash_t(v.extent);
         seed = hash_combine(seed, hash_t(v.offset))  ;
-        return seed;
-    }
-};
-
-struct PipelineShaderStageCreateInfo2
-{
-    std::string             name;
-    vk::ShaderStageFlagBits stage = vk::ShaderStageFlagBits::eVertex;
-
-    vk::ShaderModule        module;
-    std::vector<uint32_t>   code; // if given, the PipelineCreateInfo2 will generate the shader module
-};
-
-template<>
-struct hash<PipelineShaderStageCreateInfo2>
-{
-    size_t operator()(PipelineShaderStageCreateInfo2 const &v) const
-    {
-        std::hash<std::string> Hs;
-        std::hash<void const*> Hv;
-
-        auto seed = Hs(v.name);
-        seed = hash_combine(seed, hash_t(v.stage));
-        seed = hash_combine(seed, Hv(static_cast<void const*>(v.module)));
         return seed;
     }
 };
