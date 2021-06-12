@@ -31,6 +31,7 @@ struct DescriptorSetAllocator
         vk::DescriptorType   type;
         uint32_t           count;
         vk::ShaderStageFlags stages;
+        std::vector<vk::Sampler> immutableSamplers;
     };
 
     /**
@@ -103,7 +104,7 @@ struct DescriptorSetAllocator
         vkb::DescriptorSetLayoutCreateInfo2 dL;
         for(auto & b : B)
         {
-            dL.addDescriptor(b.binding, vk::DescriptorType(b.type) ,b.count, vk::ShaderStageFlags(b.stages));
+            dL.addDescriptor(b.binding, vk::DescriptorType(b.type) ,b.count, vk::ShaderStageFlags(b.stages), b.immutableSamplers);
             poolInfo.remaining[b.type] -= b.count;
         }
 

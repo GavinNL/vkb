@@ -3,6 +3,7 @@
 
 #include <vulkan/vulkan.hpp>
 #include <functional>
+#include <any>
 #include "HashFunctions.h"
 
 
@@ -117,8 +118,15 @@ struct DescriptorSetLayoutCreateInfo2
         bindings.emplace_back( vk::DescriptorSetLayoutBinding(binding, type, count, stageFlags, nullptr));
         return *this;
     }
+    DescriptorSetLayoutCreateInfo2& addDescriptor( uint32_t binding,vk::DescriptorType type, uint32_t count, vk::ShaderStageFlags stageFlags, std::vector<vk::Sampler> immutableSamplers)
+    {
+        auto & a = m_tempStorage.emplace_back() = immutableSamplers;
+        auto & v = *std::any_cast< std::vector<vk::Sampler> >(&a);
+        bindings.emplace_back( vk::DescriptorSetLayoutBinding(binding, type, count, stageFlags, v.data()));
+        return *this;
+    }
 
-
+    std::vector< std::any> m_tempStorage;
 };
 
 }
