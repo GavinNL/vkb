@@ -1,3 +1,6 @@
+#ifndef VKB_MULTISTORAGE_BUFFER_H
+#define VKB_MULTISTORAGE_BUFFER_H
+
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -138,3 +141,5 @@ private:
 };
 
 }
+
+#endif
