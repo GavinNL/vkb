@@ -10,6 +10,28 @@
 namespace vkb
 {
 
+struct DescriptorSetLayoutBinding2
+{
+    uint32_t                 binding;
+    vk::DescriptorType       descriptorType;
+    uint32_t                 descriptorCount;
+    vk::ShaderStageFlags     stageFlags;
+    std::vector<vk::Sampler> immutableSampler;
+
+
+    DescriptorSetLayoutBinding2(uint32_t binding_ = {},
+                                VULKAN_HPP_NAMESPACE::DescriptorType descriptorType_ = VULKAN_HPP_NAMESPACE::DescriptorType::eSampler,
+                                uint32_t descriptorCount_ = {},
+                                VULKAN_HPP_NAMESPACE::ShaderStageFlags stageFlags_ = {},
+                                const std::vector<vk::Sampler> pImmutableSamplers_ = {}) VULKAN_HPP_NOEXCEPT
+    : binding( binding_ ),
+      descriptorType( descriptorType_ ),
+      descriptorCount( descriptorCount_ ),
+      stageFlags( stageFlags_ ),
+      immutableSampler( pImmutableSamplers_ )
+    {}
+};
+
 struct DescriptorSetLayoutCreateInfo2
 {
     using object_type           = vk::DescriptorSetLayout;
@@ -17,14 +39,26 @@ struct DescriptorSetLayoutCreateInfo2
 
 
     vk::DescriptorSetLayoutCreateFlags          flags;
-    std::vector<vk::DescriptorSetLayoutBinding> bindings;
+    std::vector<DescriptorSetLayoutBinding2> bindings;
 
     template<typename Callable_t>
     object_type create_t(Callable_t && CC) const
     {
         vk::DescriptorSetLayoutCreateInfo D;
+
+        std::vector<vk::DescriptorSetLayoutBinding> _bindings;
+        for(auto & b: bindings)
+        {
+            auto & N = _bindings.emplace_back();
+            N.binding = b.binding;
+            N.stageFlags = b.stageFlags;
+            N.descriptorCount = b.descriptorCount;
+            N.descriptorType = b.descriptorType;
+            N.pImmutableSamplers = b.immutableSampler.data();
+        }
+
         D.bindingCount = static_cast<uint32_t>(bindings.size());
-        D.pBindings    = bindings.data();
+        D.pBindings    = _bindings.data();
         D.flags        = flags;
 
         return CC(D);
@@ -115,14 +149,14 @@ struct DescriptorSetLayoutCreateInfo2
     //============================================================
     DescriptorSetLayoutCreateInfo2& addDescriptor( uint32_t binding,vk::DescriptorType type, uint32_t count, vk::ShaderStageFlags stageFlags)
     {
-        bindings.emplace_back( vk::DescriptorSetLayoutBinding(binding, type, count, stageFlags, nullptr));
+        bindings.emplace_back( DescriptorSetLayoutBinding2(binding, type, count, stageFlags, {}));
         return *this;
     }
     DescriptorSetLayoutCreateInfo2& addDescriptor( uint32_t binding,vk::DescriptorType type, uint32_t count, vk::ShaderStageFlags stageFlags, std::vector<vk::Sampler> immutableSamplers)
     {
         auto & a = m_tempStorage.emplace_back() = immutableSamplers;
         auto & v = *std::any_cast< std::vector<vk::Sampler> >(&a);
-        bindings.emplace_back( vk::DescriptorSetLayoutBinding(binding, type, count, stageFlags, v.data()));
+        bindings.emplace_back( DescriptorSetLayoutBinding2(binding, type, count, stageFlags, v));
         return *this;
     }
 

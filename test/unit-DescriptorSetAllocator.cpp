@@ -81,7 +81,7 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
 
 
     // Allocate 7 combined image samplers
-    auto set = dSetAllocator.allocateDescriptorSet( {{ 0, vk::DescriptorType::eCombinedImageSampler, 7, vk::ShaderStageFlagBits::eFragment}});
+    auto set = dSetAllocator.allocateDescriptorSet( {{ 0, vk::DescriptorType::eCombinedImageSampler, 7, vk::ShaderStageFlagBits::eFragment, {}}});
 
     auto parentPool = dSetAllocator.getParentPool(set);
     {
@@ -112,11 +112,11 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
     // allocate two sets
     {
         auto set1 = dSetAllocator.allocateDescriptorSet( {
-                                                             { 0, vk::DescriptorType::eCombinedImageSampler, 4, vk::ShaderStageFlagBits::eFragment},
-                                                             { 1, vk::DescriptorType::eCombinedImageSampler, 3, vk::ShaderStageFlagBits::eVertex}
+                                                             { 0, vk::DescriptorType::eCombinedImageSampler, 4, vk::ShaderStageFlagBits::eFragment, {}},
+                                                             { 1, vk::DescriptorType::eCombinedImageSampler, 3, vk::ShaderStageFlagBits::eVertex  , {}}
                                                          });
 
-        auto set2 = dSetAllocator.allocateDescriptorSet( {{ 0, vk::DescriptorType::eCombinedImageSampler, 7, vk::ShaderStageFlagBits::eFragment}});
+        auto set2 = dSetAllocator.allocateDescriptorSet( {{ 0, vk::DescriptorType::eCombinedImageSampler, 7, vk::ShaderStageFlagBits::eFragment, {}}});
 
         // they come from different pools because
         // each pool only has 10 combined image samplers
