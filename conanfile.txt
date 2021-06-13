@@ -1,5 +1,7 @@
 [requires]
 sdl2/2.0.9@bincrafters/stable
+spirv-cross/20210115
+fmt/7.1.3
 
 [options]
 sdl2:jack=False

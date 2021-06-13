@@ -48,7 +48,9 @@ foreach(file ${files})
                                     ${PROJECT_NAME}-catchmain 
                                     ${PROJECT_NAME}::warnings 
                                     CONAN_PKG::sdl2 
+                                    CONAN_PKG::fmt
                                     Vulkan::Vulkan
+                                    CONAN_PKG::spirv-cross
                                     vkb::vkb
                                     vkw::vkw)
 
