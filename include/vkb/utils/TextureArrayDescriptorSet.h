@@ -153,7 +153,7 @@ struct TextureArrayDescriptorSet
         return static_cast<int32_t>(f->second);
     }
 
-    size_t insertTexture(vk::ImageView v)
+    size_t insertTexture(vk::ImageView v, vk::Sampler s = {})
     {
         if( m_viewToIndex.count(v) == 0)
         {
@@ -163,6 +163,10 @@ struct TextureArrayDescriptorSet
 
             m_images.at(index).view = v;
             m_viewToIndex[v] = index;
+            if( s )
+            {
+                m_images.at(index).sampler = s;
+            }
             setDirty(index);
             return index;
         }
@@ -333,12 +337,12 @@ struct TextureArrayDescriptorSetChain
         }
         return s;
     }
-    int32_t insertTexture( vk::ImageView v, uint32_t binding)
+    int32_t insertTexture( vk::ImageView v, uint32_t binding, vk::Sampler sa={})
     {
         int32_t s =0;
         for(auto & t : m_TextureArrayChain)
         {
-            s = static_cast<int32_t>( t[binding].insertTexture( v ) );
+            s = static_cast<int32_t>( t[binding].insertTexture( v, sa ) );
         }
         return s;
     }
