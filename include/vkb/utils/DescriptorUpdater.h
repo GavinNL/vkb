@@ -119,6 +119,51 @@ public:
     }
 };
 
+
+struct WriteDescriptorSet2
+{
+    VkDescriptorSet                     dstSet = VK_NULL_HANDLE;
+    uint32_t                            dstBinding = 0;
+    uint32_t                            dstArrayElement = 0;
+    VkDescriptorType                    descriptorType;
+    std::vector<VkDescriptorImageInfo>  ImageInfo;
+    std::vector<VkDescriptorBufferInfo> BufferInfo;
+    std::vector<VkBufferView>           TexelBufferView;
+
+    void update(VkDevice device)
+    {
+        VkWriteDescriptorSet write = {};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet          = dstSet;
+        write.dstBinding      = dstBinding;
+        write.dstArrayElement = dstArrayElement;
+        write.descriptorType  = descriptorType;
+
+        write.pImageInfo       = nullptr;
+        write.pBufferInfo      = nullptr;
+        write.pTexelBufferView = nullptr;
+
+        if( ImageInfo.size() )
+        {
+            write.descriptorCount = std::max( write.descriptorCount, static_cast<uint32_t>( ImageInfo.size() ) );
+            write.pImageInfo       = ImageInfo.data();
+        }
+        else if( BufferInfo.size() )
+        {
+            write.descriptorCount = std::max( write.descriptorCount, static_cast<uint32_t>( BufferInfo.size() ) );
+            write.pBufferInfo      = BufferInfo.data();
+        }
+        else if( TexelBufferView.size()  )
+        {
+            write.descriptorCount = std::max( write.descriptorCount, static_cast<uint32_t>( TexelBufferView.size() ) );
+            write.pTexelBufferView = TexelBufferView.data();
+        }
+
+        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    }
+};
+
+
 }
 
 #endif
