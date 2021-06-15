@@ -53,9 +53,9 @@ public:
 
         write_sets.emplace_back().setDstSet(set)
                                  .setDstBinding(binding)
-                                 .setPImageInfo(ifn.data())
+                                 .setPImageInfo( &ifn.back())
                                  .setDescriptorType( imageDescriptorType )
-                                 .setDescriptorCount( static_cast<uint32_t>(ifn.size()) )
+                                 .setDescriptorCount( 1 )
                                  .setDstArrayElement(arrayIndex);
     }
     void updateImageDescriptor( vk::DescriptorSet       set,
@@ -77,7 +77,7 @@ public:
                                  .setDstBinding(binding)
                                  .setPImageInfo(ifn.data())
                                  .setDescriptorType( imageDescriptorType )
-                                 .setDescriptorCount( static_cast<uint32_t>(ifn.size()) )
+                                 .setDescriptorCount( static_cast<uint32_t>(imgInfo_v.size()) )
                                  .setDstArrayElement(arrayIndex);
     }
 
@@ -120,46 +120,117 @@ public:
 };
 
 
-struct WriteDescriptorSet2
+struct DescriptorSetUpdater3
 {
-    VkDescriptorSet                     dstSet = VK_NULL_HANDLE;
-    uint32_t                            dstBinding = 0;
-    uint32_t                            dstArrayElement = 0;
-    VkDescriptorType                    descriptorType;
-    std::vector<VkDescriptorImageInfo>  ImageInfo;
-    std::vector<VkDescriptorBufferInfo> BufferInfo;
-    std::vector<VkBufferView>           TexelBufferView;
+protected:
+    std::vector< vk::WriteDescriptorSet > write_sets;
+    std::vector< std::any > vectorStorage;
 
-    void update(VkDevice device)
+    template<typename T>
+    std::vector<T>& getDescriptorInfo()
     {
-        VkWriteDescriptorSet write = {};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet          = dstSet;
-        write.dstBinding      = dstBinding;
-        write.dstArrayElement = dstArrayElement;
-        write.descriptorType  = descriptorType;
+        auto & x = vectorStorage.emplace_back();
+        return x.emplace< std::vector<T> >();
+    }
 
-        write.pImageInfo       = nullptr;
-        write.pBufferInfo      = nullptr;
-        write.pTexelBufferView = nullptr;
+public:
+    /**
+     * @brief updateImageDescriptor
+     * @param set
+     * @param binding
+     * @param arrayIndex
+     * @param imageDescriptorType
+     * @param imgInfo
+     *
+     * Update a single image array element in a descriptor binding.
+     *
+     * eg:
+     *   updateImageDescriptor( set, 0, 0, vk::DescriptorType::eCombinedImageSampler, { sampler, view} );
+     *
+     * note: that imgInfo contains 3 elements: sampler, view and image layout. if image layout is set
+     * to its default value, it will be converted into shaderReadOnlyOptimal
+     */
+    void updateImageDescriptor( vk::DescriptorSet       set,
+                                uint32_t                binding,
+                                uint32_t                arrayIndex,
+                                vk::DescriptorType      imageDescriptorType,
+                                vk::DescriptorImageInfo imgInfo )
+    {
+        auto & ifn =  getDescriptorInfo<vk::DescriptorImageInfo>();
 
-        if( ImageInfo.size() )
+        if(imgInfo.imageLayout == vk::ImageLayout::eUndefined)
+            imgInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+
+        ifn.emplace_back( imgInfo);
+
+
+        write_sets.emplace_back().setDstSet(set)
+                                 .setDstBinding(binding)
+                                 .setPImageInfo( &ifn.back())
+                                 .setDescriptorType( imageDescriptorType )
+                                 .setDescriptorCount( 1 )
+                                 .setDstArrayElement(arrayIndex);
+    }
+    void updateImageDescriptor( vk::DescriptorSet       set,
+                                uint32_t                binding,
+                                uint32_t                arrayIndex,
+                                vk::DescriptorType      imageDescriptorType,
+                                vk::ArrayProxy<vk::DescriptorImageInfo const> imgInfo_v )
+    {
+        auto & ifn =  getDescriptorInfo<vk::DescriptorImageInfo>();
+
+        for(auto & v : imgInfo_v)
         {
-            write.descriptorCount = std::max( write.descriptorCount, static_cast<uint32_t>( ImageInfo.size() ) );
-            write.pImageInfo       = ImageInfo.data();
-        }
-        else if( BufferInfo.size() )
-        {
-            write.descriptorCount = std::max( write.descriptorCount, static_cast<uint32_t>( BufferInfo.size() ) );
-            write.pBufferInfo      = BufferInfo.data();
-        }
-        else if( TexelBufferView.size()  )
-        {
-            write.descriptorCount = std::max( write.descriptorCount, static_cast<uint32_t>( TexelBufferView.size() ) );
-            write.pTexelBufferView = TexelBufferView.data();
+            auto & imgInfo = ifn.emplace_back(v);
+            if(imgInfo.imageLayout == vk::ImageLayout::eUndefined)
+                imgInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
         }
 
-        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+        write_sets.emplace_back().setDstSet(set)
+                                 .setDstBinding(binding)
+                                 .setPImageInfo(ifn.data())
+                                 .setDescriptorType( imageDescriptorType )
+                                 .setDescriptorCount( static_cast<uint32_t>(imgInfo_v.size()) )
+                                 .setDstArrayElement(arrayIndex);
+    }
+
+
+    void updateBufferDescriptor( vk::DescriptorSet  set,
+                                 uint32_t           binding,
+                                 uint32_t           arrayIndex,
+                                 vk::DescriptorType bufferDescriptorType,
+                                 vk::ArrayProxy< const vk::DescriptorBufferInfo > buffer_offset_range )
+    {
+        auto & ifn =  getDescriptorInfo<vk::DescriptorBufferInfo>();
+
+        for(auto & v : buffer_offset_range)
+        {
+            auto & imgInfo = ifn.emplace_back(v);
+            if(imgInfo.range == 0)
+                imgInfo.range = VK_WHOLE_SIZE;
+        }
+
+        write_sets.emplace_back().setDstSet(set)
+                                 .setDstBinding(binding)
+                                 .setPBufferInfo(ifn.data())
+                                 .setDescriptorType(bufferDescriptorType)
+                                 .setDescriptorCount( static_cast<uint32_t>(ifn.size()) )
+                                 .setDstArrayElement(arrayIndex);
+
+    }
+
+    template<typename Callable_t>
+    void create_t(Callable_t && CC) const
+    {
+
+
+        CC(write_sets);
+    }
+
+    void update(vk::Device d)
+    {
+        d.updateDescriptorSets(write_sets, nullptr);
+        vectorStorage.clear();
     }
 };
 
