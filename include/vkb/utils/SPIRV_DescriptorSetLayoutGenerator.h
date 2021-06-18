@@ -58,7 +58,7 @@ struct SPIRV_DescriptorSetLayoutGenerator
                 bind.binding         = binding;
                 bind.descriptorCount = std::max(1u, arraySize);
                 bind.descriptorType  = _type;
-                bind.stageFlags     |= stage;
+                bind.stageFlags     |= static_cast<VkShaderStageFlags>(stage);
             }
 
         };
@@ -79,8 +79,8 @@ struct SPIRV_DescriptorSetLayoutGenerator
         for (auto &range : ranges)
         {
             auto & R = m_pushRangeV.emplace_back();
-            R.size       = range.range;
-            R.offset     = range.offset;
+            R.size       = static_cast<uint32_t>(range.range);
+            R.offset     = static_cast<uint32_t>(range.offset);
             R.stageFlags = stage;
          //   std::cout << fmt::format("Accessing member #{}, offset {}, size {}\n", range.index, range.offset, range.range);
         }

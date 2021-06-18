@@ -77,13 +77,13 @@ public:
         auto & V = m_cci.vertexInputState.vertexAttributeDescriptions;
         auto & B = m_cci.vertexInputState.vertexBindingDescriptions;
 
-        std::sort(V.begin(), V.end(), [](auto & A, auto & C)
+        std::sort(V.begin(), V.end(), [](auto & A, auto & D)
         {
-            return A.location < C.location;
+            return A.location < D.location;
         });
-        std::sort(B.begin(), B.end(), [](auto & A, auto & C)
+        std::sort(B.begin(), B.end(), [](auto & A, auto & D)
         {
-            return A.binding < C.binding;
+            return A.binding < D.binding;
         });
 
         //m_cci     = m_storage->getCreateInfo<vkb::GraphicsPipelineCreateInfo2>( std::get<0>(p));
