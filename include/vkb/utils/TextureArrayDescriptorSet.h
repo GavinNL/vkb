@@ -223,6 +223,7 @@ struct TextureArrayDescriptorSetChainCreateInfo
         vk::Sampler     defaultSampler;
         vk::ImageView   defaultImageView;
         vk::ImageLayout defaultImageLayout;
+        vk::ShaderStageFlags stages = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
     };
 
     std::vector< ArrayInfo > bindings;
@@ -263,7 +264,7 @@ struct TextureArrayDescriptorSetChain
             L.addDescriptor(T.descriptorSetBinding,
                             vk::DescriptorType::eCombinedImageSampler,
                             T.textureCount,
-                            vk::ShaderStageFlagBits::eFragment);
+                            T.stages);
             textureCount += T.textureCount;
         }
 
