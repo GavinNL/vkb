@@ -30,6 +30,14 @@ struct DescriptorSetLayoutBinding2
       stageFlags( stageFlags_ ),
       immutableSampler( pImmutableSamplers_ )
     {}
+
+    DescriptorSetLayoutBinding2( VkDescriptorSetLayoutBinding const &  B)
+    {
+        binding = B.binding;
+        descriptorType = static_cast<vk::DescriptorType>(B.descriptorType);
+        descriptorCount = B.descriptorCount;
+        stageFlags = static_cast<vk::ShaderStageFlags>(B.stageFlags);
+    }
 };
 
 struct DescriptorSetLayoutCreateInfo2
