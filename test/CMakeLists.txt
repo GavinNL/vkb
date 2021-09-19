@@ -47,10 +47,11 @@ foreach(file ${files})
                                 PUBLIC 
                                     ${PROJECT_NAME}-catchmain 
                                     ${PROJECT_NAME}::warnings 
-                                    CONAN_PKG::sdl2 
+                                    CONAN_PKG::sdl
                                     CONAN_PKG::fmt
                                     Vulkan::Vulkan
                                     CONAN_PKG::spirv-cross
+                                    CONAN_PKG::vulkan-memory-allocator
                                     vkb::vkb
                                     vkw::vkw)
 
