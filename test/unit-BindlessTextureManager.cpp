@@ -68,14 +68,22 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
 
     vkb::Storage S;
 
-
+    vkb::BindlessTextureManager::CreateInfo Ci;
+    Ci.instance       = window->getInstance();
+    Ci.physicalDevice = window->getPhysicalDevice();
+    Ci.device         = window->getDevice();
+    Ci.allocator      = nullptr;// create it for us
+    Ci.graphicsQueue  = window->getGraphicsQueue();
+    Ci.totalTexture2D = 32;
     vkb::BindlessTextureManager tManager;
 
-    tManager.createAllocator(window->getInstance(), window->getPhysicalDevice(), window->getDevice());
+    tManager.create(Ci);
 
-    tManager.init(32);
+    auto id = tManager.allocateTexture({256,256});
+    uint8_t rawData[256*256*4];
 
-    tManager.allocateTexture({256,256});
+    tManager.copyDataToImage(id, rawData,256*256*4, {256,256}, {{0,0},{256,256}},0,0);
+
 
     tManager.update();
     tManager.update();

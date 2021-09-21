@@ -10,6 +10,7 @@
 #include <cassert>
 #include <iostream>
 #include <variant>
+#include <cstring>
 #include <vk_mem_alloc.h>
 
 namespace vkb
@@ -109,22 +110,47 @@ class BindlessTextureManager
 {
 public:
 
-    bool createAllocator(VkInstance instance,
-                         VkPhysicalDevice physicalDevice,
-                         VkDevice device)
+    struct CreateInfo
     {
-        m_allocatorInfo.physicalDevice   = physicalDevice;
-        m_allocatorInfo.device           = device;
-        m_allocatorInfo.instance         = instance;
-        m_allocatorInfo.vulkanApiVersion = 0;
+        VkInstance       instance;
+        VkPhysicalDevice physicalDevice;
+        VkDevice         device;
+        VkQueue          graphicsQueue; // the queue used for submitting commands to
+        VmaAllocator     allocator = nullptr; // can be left null, will create
 
-        auto result = vmaCreateAllocator(&m_allocatorInfo, &m_allocator);
+        //
+        uint32_t totalTexture2D = 16;
 
-        if( result != VK_SUCCESS)
+    };
+
+    using _buffer = std::pair<VkBuffer, VmaAllocation>;
+
+    /**
+     * @brief create
+     * @param C
+     * @return
+     *
+     * Create all the internal data for the bindless texture manager.
+     */
+    bool create(CreateInfo const & C)
+    {
+        m_createInfo = C;
+        if( m_createInfo.allocator == nullptr)
         {
-            throw std::runtime_error("Error creator allocator");
+            VmaAllocatorCreateInfo aci = {};
+            aci.physicalDevice   = m_createInfo.physicalDevice;
+            aci.device           = m_createInfo.device;
+            aci.instance         = m_createInfo.instance;
+            aci.vulkanApiVersion = 0;
+            auto result = vmaCreateAllocator(&aci, &m_createInfo.allocator);
+            if( result != VK_SUCCESS)
+            {
+                throw std::runtime_error("Error creator allocator");
+            }
+            m_selfManagedAllocator = true;
         }
-        m_selfManagedAllocator = true;
+        m_commandPool = _createCommandPool();
+        init(m_createInfo.totalTexture2D);
         return true;
     }
 
@@ -141,6 +167,7 @@ public:
             destroyImage(m_images.back());
             m_images.pop_back();
         }
+        vkDestroyCommandPool(getDevice(), m_commandPool, nullptr);
 
         // destroy the descriptor pool
         vkDestroyDescriptorPool(getDevice(), m_descriptorPool,nullptr);
@@ -149,13 +176,238 @@ public:
         vkDestroyDescriptorSetLayout(getDevice(), m_layout, nullptr);
         m_layout = VK_NULL_HANDLE;
 
-        if( m_allocator && m_selfManagedAllocator)
+        if( m_createInfo.allocator && m_selfManagedAllocator)
         {
-            vmaDestroyAllocator(m_allocator);
-            m_allocator = nullptr;
+            vmaDestroyAllocator(m_createInfo.allocator);
+            m_createInfo.allocator = nullptr;
             m_selfManagedAllocator = false;
         }
     }
+
+    /**
+     * @brief allocateTexture
+     * @param extent
+     * @param format
+     * @return
+     *
+     * Allocate a texture in the manager. Once a texture is allocated
+     * it is not destroyed unless you:
+     */
+    idTexture2D allocateTexture(VkExtent2D extent, VkFormat format = VK_FORMAT_R8G8B8A8_UNORM, uint32_t mipMaps = 0)
+    {
+        int32_t j=0;
+
+        // Loop through all the free images.
+        // These are images which were no longer needed, but are still
+        // allocated. They can be reused.
+        // So find one that fits the dimensions/format/etc
+        // and return that one. none exist, then
+        // we will have to create a new texture
+        for(auto & i : m_freeImages)
+        {
+            auto & info = m_images[i].info;
+            if( info.extent.width == extent.width &&
+                info.extent.height == extent.height &&
+                info.extent.depth == 1 &&
+                info.arrayLayers == 1 &&
+                info.format == format)
+            {
+                return {j};
+            }
+            ++j;
+        }
+        auto img = image_Create(extent.width,extent.height,1, format, VK_IMAGE_VIEW_TYPE_2D, 1, mipMaps, {});
+        m_images.push_back(img);
+        setDirty(m_images.size()-1);
+        return { static_cast<int32_t>(m_images.size()-1) };
+    }
+
+
+    VkFormat getFormat(idTexture2D id) const
+    {
+        return m_images.at(id.index).info.format;
+    }
+    uint32_t formatSize(VkFormat f) const
+    {
+        assert( f == VK_FORMAT_R8G8B8A8_UNORM);
+        return 4;
+    }
+
+
+    void copyBufferToImage( VkCommandBuffer cmd,
+                            _buffer srcBuffer,
+                            uint32_t srcImageWidth,
+                            uint32_t srcImageHeight,
+                            idTexture2D dstId,
+                            VkOffset3D dstOffset,
+                            VkExtent3D dstExtent,
+                            uint32_t   dstArrayBaseLayer,
+                            uint32_t   dstMipBaseLevel
+                          )
+    {
+        { // do buffer copy
+            VkBufferImageCopy region = {};
+
+            region.bufferOffset                    = 0;
+            region.bufferRowLength                 = srcImageWidth;
+            region.bufferImageHeight               = srcImageHeight;
+            region.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+            region.imageSubresource.baseArrayLayer = dstArrayBaseLayer;
+            region.imageSubresource.layerCount     = 1;
+            region.imageSubresource.mipLevel       = dstMipBaseLevel;
+            region.imageSubresource.layerCount     = 1;
+            region.imageOffset                     = dstOffset;
+            region.imageExtent                     = dstExtent;
+
+            vkCmdCopyBufferToImage(
+                cmd,
+                srcBuffer.first,
+                m_images[dstId.index].image,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                static_cast<uint32_t>(1),
+                &region
+            );
+        }
+    }
+
+    void copyDataToImage( idTexture2D dstId,
+                          void const * srcData,
+                          uint32_t     srcByteSize,
+                          VkExtent2D   srcExtent,
+
+                          VkRect2D     dstRect,
+                          uint32_t     dstLayer,
+                          uint32_t     dstMip)
+    {
+        auto cmd = _allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+
+        _transitionLayout(cmd, m_images[dstId.index].image,
+                          VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          dstLayer, 1,
+                          dstMip  , 1);
+
+        uint32_t srcTexelsPerRow = srcExtent.width;
+        uint32_t srcTexelsHeight = srcExtent.height;
+
+        VkExtent3D _extent;
+        _extent.depth  = 1;
+        _extent.width  = std::min(m_images[dstId.index].info.extent.width - dstRect.offset.x, dstRect.extent.width);
+        _extent.height = std::min(m_images[dstId.index].info.extent.height- dstRect.offset.y, dstRect.extent.height);
+
+        VkOffset3D _offset{ dstRect.offset.x, dstRect.offset.y, 0};
+
+        auto stg = _allocateStagingBuffer(srcData, srcByteSize);
+
+        copyBufferToImage(cmd, stg, srcExtent.width,srcExtent.height, dstId, _offset, _extent, dstLayer, dstMip);
+
+
+        _transitionLayout(cmd, m_images[dstId.index].image,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                          dstLayer, 1,
+                          dstMip  , 1);
+
+        vkEndCommandBuffer(cmd);
+        _submitCommandBuffer(cmd, true);
+
+        _destroyBuffer(stg);
+
+    }
+
+    /**
+     * @brief freeTexture
+     * @param id
+     *
+     * Frees a texture, this does not automatically "free memory",
+     * it keeps the texture in a memory pool. the next time you
+     * allocate a texturte, it will reuse the same one if the dimensions
+     * are the same.
+     */
+    void freeTexture(idTexture2D id)
+    {
+        auto i = static_cast<size_t>(id.index);
+        m_freeImages.push_back(i);
+    }
+
+    /**
+     * @brief update
+     *
+     * Updates all the dirty indices in the texture array.
+     *
+     * This should only be called ONCE per frame
+     */
+    void update()
+    {
+        if(m_images.size() == 0)
+        {
+            throw std::runtime_error("Cannot update images. Need to allocate at least 1 image");
+        }
+        m_dChain[ getCurrentChain() ].update(getDevice(), m_images);
+        m_currentChain = (m_currentChain+1) % m_dChain.size();
+    }
+    void setDirty(size_t index)
+    {
+        for(auto & x : m_dChain)
+        {
+            x.dirty.push_back(index);
+        }
+    }
+    size_t getCurrentChain() const
+    {
+        return m_currentChain;
+    }
+
+
+
+    void copyImageData(void const * pixelData, size_t byteSize,
+                       uint32_t srcPixelWidth,
+                       uint32_t srcPixelsHeight,
+                       VkImage dstImage,
+                       VkOffset3D dstOffset,
+                       VkExtent3D dstExtent,
+                       uint32_t arrayBaseLayer,
+                       uint32_t mipBaseLevel)
+    {
+        auto staging = _allocateBuffer(byteSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+        void * mapped = nullptr;
+        vmaMapMemory(getAllocator(), staging.second, &mapped);
+
+        std::memcpy(mapped, pixelData, byteSize);
+        vmaFlushAllocation(getAllocator(), staging.second, 0, byteSize);
+
+        { // do buffer copy
+            VkBufferImageCopy region = {};
+
+            region.bufferOffset                    = 0;
+            region.bufferRowLength                 = srcPixelWidth;
+            region.bufferImageHeight               = srcPixelsHeight;
+            region.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+            region.imageSubresource.baseArrayLayer = arrayBaseLayer;
+            region.imageSubresource.layerCount     = 1;
+            region.imageSubresource.mipLevel       = mipBaseLevel;
+            region.imageSubresource.layerCount     = 1;
+            region.imageOffset                     = dstOffset;
+            region.imageExtent                     = dstExtent;
+
+            auto cmdBuffer = _allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+
+            vkCmdCopyBufferToImage(
+                cmdBuffer,
+                staging.first,
+                dstImage,
+                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                static_cast<uint32_t>(1),
+                &region
+            );
+
+            vkEndCommandBuffer(cmdBuffer);
+            _submitCommandBuffer(cmdBuffer, true);
+            _freeCommandBuffer(cmdBuffer);
+        }
+
+        vmaUnmapMemory(getAllocator(), staging.second);
+        _destroyBuffer(staging);
+    }
+protected:
 
     void init(uint32_t total2DTextures)
     {
@@ -214,71 +466,6 @@ public:
     }
 
 
-    idTexture2D allocateTexture(VkExtent2D extent, VkFormat format = VK_FORMAT_R8G8B8A8_UNORM)
-    {
-        int32_t j=0;
-        for(auto & i : m_freeImages)
-        {
-            auto & info = m_images[i].info;
-            if( info.extent.width == extent.width &&
-                info.extent.height == extent.height &&
-                info.extent.depth == 1 &&
-                info.arrayLayers == 1 &&
-                info.format == format)
-            {
-                return {j};
-            }
-            ++j;
-        }
-        auto img = image_Create(extent.width,extent.height,1, format, VK_IMAGE_VIEW_TYPE_2D, 1, 0, {});
-        m_images.push_back(img);
-        setDirty(m_images.size()-1);
-        return { static_cast<int32_t>(m_images.size()-1) };
-    }
-
-    /**
-     * @brief freeTexture
-     * @param id
-     *
-     * Frees a texture, this does not automatically "free memory",
-     * it keeps the texture in a memory pool. the next time you
-     * allocate a texturte, it will reuse the same one if the dimensions
-     * are the same.
-     */
-    void freeTexture(idTexture2D id)
-    {
-        auto i = static_cast<size_t>(id.index);
-        m_freeImages.push_back(i);
-    }
-
-    /**
-     * @brief update
-     *
-     * Updates all the dirty indices in the texture array.
-     *
-     * This should only be called ONCE per frame
-     */
-    void update()
-    {
-        if(m_images.size() == 0)
-        {
-            throw std::runtime_error("Cannot update images. Need to allocate at least 1 image");
-        }
-        m_dChain[ getCurrentChain() ].update(getDevice(), m_images);
-        m_currentChain = (m_currentChain+1) % m_dChain.size();
-    }
-    void setDirty(size_t index)
-    {
-        for(auto & x : m_dChain)
-        {
-            x.dirty.push_back(index);
-        }
-    }
-    size_t getCurrentChain() const
-    {
-        return m_currentChain;
-    }
-protected:
     ImageInfo  image_Create( uint32_t width, uint32_t height, uint32_t depth
                              ,VkFormat format
                              ,VkImageViewType viewType
@@ -296,6 +483,12 @@ protected:
         imageInfo.mipLevels     = miplevels;
         imageInfo.arrayLayers   = arrayLayers;
 
+        imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;// vk::SampleCountFlagBits::e1;
+        imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;// vk::ImageTiling::eOptimal;
+        imageInfo.usage         = additionalUsageFlags | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;// vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst;
+        imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;// vk::SharingMode::eExclusive;
+        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;// vk::ImageLayout::eUndefined;
+
         if( imageInfo.mipLevels == 0)
         {
             auto w = width;
@@ -304,12 +497,6 @@ protected:
             imageInfo.mipLevels = 1 + static_cast<uint32_t>(std::floor(std::log2(d)));
             miplevels = imageInfo.mipLevels;
         }
-
-        imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;// vk::SampleCountFlagBits::e1;
-        imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;// vk::ImageTiling::eOptimal;
-        imageInfo.usage         = additionalUsageFlags | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;// vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst;
-        imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;// vk::SharingMode::eExclusive;
-        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;// vk::ImageLayout::eUndefined;
 
         if( arrayLayers == 6)
             imageInfo.flags |=  VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;// vk::ImageCreateFlagBits::eCubeCompatible;
@@ -322,7 +509,7 @@ protected:
         VmaAllocationInfo allocInfo;
 
         VkImageCreateInfo & imageInfo_c = imageInfo;
-        vmaCreateImage(m_allocator,  &imageInfo_c,  &allocCInfo, &image, &allocation, &allocInfo);
+        vmaCreateImage(getAllocator(),  &imageInfo_c,  &allocCInfo, &image, &allocation, &allocInfo);
 
         ImageInfo I;
         I.image      = image;
@@ -405,6 +592,46 @@ protected:
     }
 
 
+    void _destroyBuffer(_buffer buffer)
+    {
+        vmaDestroyBuffer(getAllocator(), buffer.first, buffer.second);
+    }
+    _buffer _allocateStagingBuffer(void const * data, uint32_t byteSize)
+    {
+        auto staging = _allocateBuffer(byteSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+        void * mapped = nullptr;
+        vmaMapMemory(getAllocator(), staging.second, &mapped);
+
+        std::memcpy(mapped, data, byteSize);
+        vmaFlushAllocation(getAllocator(), staging.second, 0, byteSize);
+
+        return staging;
+    }
+
+    _buffer _allocateBuffer(uint32_t size, VkBufferUsageFlags usage, VmaMemoryUsage memUsage)
+    {
+        VkBufferCreateInfo bufferInfo = {};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size  = size;
+        bufferInfo.usage = usage;
+
+        VmaAllocationCreateInfo allocCInfo = {};
+        allocCInfo.usage = memUsage;
+        allocCInfo.flags = VMA_ALLOCATION_CREATE_MAPPED_BIT; // can always set this bit,
+                                                             // vma will not allow device local
+                                                             // memory to be mapped
+
+        VkBuffer          buffer;
+        VmaAllocation     allocation = nullptr;
+        VmaAllocationInfo allocInfo;
+
+        auto result = vmaCreateBuffer(getAllocator(), &bufferInfo, &allocCInfo, &buffer, &allocation, &allocInfo);
+
+        VK_CHECK_RESULT(result);
+
+        return {buffer,allocation};
+    }
+
     void destroyImage(ImageInfo & I)
     {
         vkDestroyImageView(getDevice(), I.imageView, nullptr);
@@ -413,28 +640,201 @@ protected:
         vkDestroySampler(getDevice(), I.sampler.nearest, nullptr);
 
         I.sampler.linear = I.sampler.nearest = VK_NULL_HANDLE;
-        vmaDestroyImage(m_allocator, I.image, I.allocation);
+        vmaDestroyImage(getAllocator(), I.image, I.allocation);
         I.allocation = nullptr;
         I.image      = VK_NULL_HANDLE;
         I.imageView  = VK_NULL_HANDLE;
     }
 
+    VkCommandBuffer _allocateCommandBuffer(VkCommandBufferLevel level, bool begin)
+    {
+        VkCommandBufferAllocateInfo cmdBufAllocateInfo{};
+        cmdBufAllocateInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        cmdBufAllocateInfo.commandPool        = getCommandPool();
+        cmdBufAllocateInfo.level              = level;
+        cmdBufAllocateInfo.commandBufferCount = 1;
+
+        VkCommandBuffer cmdBuffer;
+        VK_CHECK_RESULT(vkAllocateCommandBuffers(getDevice(), &cmdBufAllocateInfo, &cmdBuffer));
+
+        // If requested, also start recording for the new command buffer
+        if (begin)
+        {
+            VkCommandBufferBeginInfo commandBufferBI{};
+            commandBufferBI.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            VK_CHECK_RESULT(vkBeginCommandBuffer(cmdBuffer, &commandBufferBI));
+        }
+
+        return cmdBuffer;
+    }
+    VkCommandPool getCommandPool()
+    {
+        return m_commandPool;
+    }
+    void _freeCommandBuffer(VkCommandBuffer cmd)
+    {
+        vkFreeCommandBuffers(getDevice(), getCommandPool(), 1, &cmd);
+    }
+    VkFence _submitCommandBuffer(VkCommandBuffer cmd, bool waitForFence=true)
+    {
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType              = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers    = &cmd;
+
+        {
+            // Create fence to ensure that the command buffer has finished executing
+            VkFenceCreateInfo fenceInfo{};
+            fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+            VkFence fence;
+            VK_CHECK_RESULT(vkCreateFence(getDevice(), &fenceInfo, nullptr, &fence));
+
+            VK_CHECK_RESULT(vkQueueSubmit(getGraphicsQueue(), 1, &submitInfo, fence));
+
+            if( waitForFence )
+            {
+                vkWaitForFences( getDevice(), 1, &fence, VK_TRUE,100000000000);
+                vkDestroyFence(getDevice(), fence, nullptr);
+                return VK_NULL_HANDLE;
+            }
+            return fence;
+        }
+    }
+    void _image_TransitionLayout(VkCommandBuffer cmd,
+                                VkImage image,
+                                VkImageLayout oldLayout,
+                                VkImageLayout newLayout,
+                                uint32_t firstLayer, uint32_t layerCount,
+                                uint32_t firstMip  , uint32_t mipCount)
+    {
+        VkImageSubresourceRange subresourceRange = {};
+        subresourceRange.aspectMask              = VK_IMAGE_ASPECT_COLOR_BIT;
+        subresourceRange.baseMipLevel            = firstMip;
+        subresourceRange.levelCount              = mipCount;
+        subresourceRange.baseArrayLayer          = firstLayer;
+        subresourceRange.layerCount              = layerCount;
+
+        // Image barrier for optimal image (target)
+        // Optimal image will be used as destination for the copy
+        {
+            VkImageMemoryBarrier imageMemoryBarrier{};
+            imageMemoryBarrier.sType            = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            imageMemoryBarrier.oldLayout        = oldLayout;
+            imageMemoryBarrier.newLayout        = newLayout;
+            imageMemoryBarrier.srcAccessMask    = 0;
+            imageMemoryBarrier.dstAccessMask    = VK_ACCESS_TRANSFER_WRITE_BIT;
+            imageMemoryBarrier.image            = image;
+            imageMemoryBarrier.subresourceRange = subresourceRange;
+
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+        }
+    }
+
+    VkCommandPool _createCommandPool( VkQueueFlags queueFlagBits = VK_QUEUE_TRANSFER_BIT | VK_QUEUE_GRAPHICS_BIT,
+                                      VkCommandPoolCreateFlags createFlags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT)
+    {
+        VkCommandPoolCreateInfo cmdPoolInfo = {};
+        cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+
+        cmdPoolInfo.queueFamilyIndex = _getQueueFamilyIndex(queueFlagBits, getPhysicalDevice());
+
+        cmdPoolInfo.flags = createFlags;
+        VkCommandPool cmdPool;
+        VK_CHECK_RESULT(vkCreateCommandPool(getDevice(), &cmdPoolInfo, nullptr, &cmdPool));
+        return cmdPool;
+    }
+
+    static uint32_t _getQueueFamilyIndex(VkQueueFlags queueFlags, VkPhysicalDevice physicalDevice)
+    {
+        std::vector<VkQueueFamilyProperties> queueFamilyProperties;
+        uint32_t queueFamilyCount;
+        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
+        assert(queueFamilyCount > 0);
+        queueFamilyProperties.resize(queueFamilyCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilyProperties.data());
+
+        // Dedicated queue for compute
+        // Try to find a queue family index that supports compute but not graphics
+        if (queueFlags & VK_QUEUE_COMPUTE_BIT)
+        {
+            for (uint32_t i = 0; i < static_cast<uint32_t>(queueFamilyProperties.size()); i++) {
+                if ((queueFamilyProperties[i].queueFlags & queueFlags) && ((queueFamilyProperties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0)) {
+                    return i;
+                    break;
+                }
+            }
+        }
+
+        // For other queue types or if no separate compute queue is present, return the first one to support the requested flags
+        for (uint32_t i = 0; i < static_cast<uint32_t>(queueFamilyProperties.size()); i++) {
+            if (queueFamilyProperties[i].queueFlags & queueFlags) {
+                return i;
+                break;
+            }
+        }
+
+        throw std::runtime_error("Could not find a matching queue family index");
+    }
+
+    void _transitionLayout(VkCommandBuffer cmd,
+                           VkImage image,
+                           VkImageLayout oldLayout,
+                           VkImageLayout newLayout,
+                           uint32_t firstLayer, uint32_t layerCount,
+                           uint32_t firstMip  , uint32_t mipCount)
+    {
+        VkImageSubresourceRange subresourceRange = {};
+        subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+
+        subresourceRange.baseMipLevel = firstMip;
+        subresourceRange.levelCount   = mipCount;
+
+        subresourceRange.baseArrayLayer = firstLayer;
+        subresourceRange.layerCount     = layerCount;
+
+        // Image barrier for optimal image (target)
+        // Optimal image will be used as destination for the copy
+        {
+            VkImageMemoryBarrier imageMemoryBarrier{};
+            imageMemoryBarrier.sType         = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            imageMemoryBarrier.oldLayout     = oldLayout;
+            imageMemoryBarrier.newLayout     = newLayout;
+            imageMemoryBarrier.srcAccessMask = 0;
+            imageMemoryBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            imageMemoryBarrier.image         = image;
+            imageMemoryBarrier.subresourceRange = subresourceRange;
+
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrier);
+        }
+    }
+
+    VkQueue getGraphicsQueue() const
+    {
+        return m_createInfo.graphicsQueue;
+    }
+    VkPhysicalDevice getPhysicalDevice() const
+    {
+        return m_createInfo.physicalDevice;
+    }
     VkDevice getDevice() const
     {
         // destroy the layout
-        return m_allocatorInfo.device;
+        return m_createInfo.device;
+    }
+    VmaAllocator getAllocator()
+    {
+        return m_createInfo.allocator;
     }
     VkDescriptorSetLayout m_layout;
     VkDescriptorPool      m_descriptorPool;
-
+    VkCommandPool         m_commandPool;
 
     std::vector<ImageInfo>       m_images;
     std::vector<size_t>          m_freeImages;
     std::vector<DescriptorChain> m_dChain;
-    VmaAllocatorCreateInfo       m_allocatorInfo;
-    VmaAllocator                 m_allocator = nullptr;
-    bool                         m_selfManagedAllocator=false;
-    size_t m_currentChain = 0;
+    CreateInfo                   m_createInfo;
+    bool                         m_selfManagedAllocator = false;
+    size_t                       m_currentChain         = 0;
 };
 
 }
