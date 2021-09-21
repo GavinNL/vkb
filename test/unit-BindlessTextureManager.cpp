@@ -1,6 +1,5 @@
 #include "catch.hpp"
 #include <fstream>
-
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_vulkan.h>
 
@@ -38,6 +37,54 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL VulkanReportFunc(
     printf("VULKAN VALIDATION: [%s] %s\n", layerPrefix, msg);
     //throw std::runtime_error( msg );
     return VK_FALSE;
+}
+
+struct SimpleImage
+{
+    SimpleImage(uint32_t w, uint32_t h) : width(w), height(h)
+    {
+        data.resize(w*h*4);
+    }
+    uint32_t width;
+    uint32_t height;
+    std::vector<uint8_t> data;
+};
+
+namespace vkb
+{
+template<>
+struct ImgQuery<SimpleImage>
+{
+    SimpleImage const & I;
+    ImgQuery(SimpleImage const & i) : I(i)
+    {
+
+    }
+    void const * data() const
+    {
+        return I.data.data();
+    }
+    uint32_t width() const
+    {
+        return I.width;
+    }
+    uint32_t height() const
+    {
+        return I.width;
+    }
+    uint32_t depth() const
+    {
+        return 1;
+    }
+    uint32_t bytesPerPixel() const
+    {
+        return 4;
+    }
+    VkFormat format() const
+    {
+        return VK_FORMAT_R8G8B8A8_UNORM;
+    }
+};
 }
 
 
@@ -82,14 +129,31 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
     auto id = tManager.allocateTexture({256,256});
     uint8_t rawData[256*256*4];
 
-    tManager.copyDataToImage(id, rawData,256*256*4, {256,256}, {{0,0},{256,256}},0,0);
+    SimpleImage img(256,256);
 
+    tManager.uploadImageData(id, rawData,256*256*4, {256,256}, {{0,0},{256,256}},0,0);
 
+    tManager.uploadImageData(id, img);
+
+    tManager.generateMipMaps(id);
+
+    auto id2 = tManager.allocateTexture(img);
+    // frame 1
     tManager.update();
+        // tManager.bind(0); // bind to descriptor set 0
+        // draw
+
+    // frame 2
     tManager.update();
+
+        // draw
+    // frame 3
     tManager.update();
+        // draw
+
+    // frame 4
     tManager.update();
-    tManager.update();
+        // draw
 
     tManager.destroy();
 

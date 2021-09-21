@@ -11,6 +11,7 @@
 #include <iostream>
 #include <variant>
 #include <cstring>
+#include <algorithm>
 #include <vk_mem_alloc.h>
 
 namespace vkb
@@ -51,6 +52,10 @@ struct idTextureCube
     int32_t index = -1;
 };
 
+template<typename Img_t>
+struct ImgQuery;
+
+
 struct ImageInfo
 {
     VkImage           image;
@@ -77,6 +82,10 @@ struct DescriptorChain
         std::vector<VkDescriptorImageInfo> imageInfos;
         writes.reserve(dirty.size());
         imageInfos.reserve(dirty.size());
+
+        std::sort(dirty.begin(), dirty.end());
+        dirty.erase( std::unique( dirty.begin(), dirty.end()), dirty.end());
+
 
         for(auto j : dirty)
         {
@@ -184,6 +193,9 @@ public:
         }
     }
 
+    //=========================================================================================================================
+    // Simple Texture Management
+    //=========================================================================================================================
     /**
      * @brief allocateTexture
      * @param extent
@@ -222,97 +234,6 @@ public:
         return { static_cast<int32_t>(m_images.size()-1) };
     }
 
-
-    VkFormat getFormat(idTexture2D id) const
-    {
-        return m_images.at(id.index).info.format;
-    }
-    uint32_t formatSize(VkFormat f) const
-    {
-        assert( f == VK_FORMAT_R8G8B8A8_UNORM);
-        return 4;
-    }
-
-
-    void copyBufferToImage( VkCommandBuffer cmd,
-                            _buffer srcBuffer,
-                            uint32_t srcImageWidth,
-                            uint32_t srcImageHeight,
-                            idTexture2D dstId,
-                            VkOffset3D dstOffset,
-                            VkExtent3D dstExtent,
-                            uint32_t   dstArrayBaseLayer,
-                            uint32_t   dstMipBaseLevel
-                          )
-    {
-        { // do buffer copy
-            VkBufferImageCopy region = {};
-
-            region.bufferOffset                    = 0;
-            region.bufferRowLength                 = srcImageWidth;
-            region.bufferImageHeight               = srcImageHeight;
-            region.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
-            region.imageSubresource.baseArrayLayer = dstArrayBaseLayer;
-            region.imageSubresource.layerCount     = 1;
-            region.imageSubresource.mipLevel       = dstMipBaseLevel;
-            region.imageSubresource.layerCount     = 1;
-            region.imageOffset                     = dstOffset;
-            region.imageExtent                     = dstExtent;
-
-            vkCmdCopyBufferToImage(
-                cmd,
-                srcBuffer.first,
-                m_images[dstId.index].image,
-                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                static_cast<uint32_t>(1),
-                &region
-            );
-        }
-    }
-
-    void copyDataToImage( idTexture2D dstId,
-                          void const * srcData,
-                          uint32_t     srcByteSize,
-                          VkExtent2D   srcExtent,
-
-                          VkRect2D     dstRect,
-                          uint32_t     dstLayer,
-                          uint32_t     dstMip)
-    {
-        auto cmd = _allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
-
-        _transitionLayout(cmd, m_images[dstId.index].image,
-                          VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                          dstLayer, 1,
-                          dstMip  , 1);
-
-        uint32_t srcTexelsPerRow = srcExtent.width;
-        uint32_t srcTexelsHeight = srcExtent.height;
-
-        VkExtent3D _extent;
-        _extent.depth  = 1;
-        _extent.width  = std::min(m_images[dstId.index].info.extent.width - dstRect.offset.x, dstRect.extent.width);
-        _extent.height = std::min(m_images[dstId.index].info.extent.height- dstRect.offset.y, dstRect.extent.height);
-
-        VkOffset3D _offset{ dstRect.offset.x, dstRect.offset.y, 0};
-
-        auto stg = _allocateStagingBuffer(srcData, srcByteSize);
-
-        copyBufferToImage(cmd, stg, srcExtent.width,srcExtent.height, dstId, _offset, _extent, dstLayer, dstMip);
-
-
-        _transitionLayout(cmd, m_images[dstId.index].image,
-                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                          dstLayer, 1,
-                          dstMip  , 1);
-
-        vkEndCommandBuffer(cmd);
-        _submitCommandBuffer(cmd, true);
-
-        _destroyBuffer(stg);
-
-    }
-
     /**
      * @brief freeTexture
      * @param id
@@ -327,6 +248,220 @@ public:
         auto i = static_cast<size_t>(id.index);
         m_freeImages.push_back(i);
     }
+
+    template<typename Img_t>
+    idTexture2D allocateTexture( Img_t const & img, uint32_t mips = 0 )
+    {
+        ImgQuery<Img_t> Q(img);
+        VkExtent2D  srcExtent = { Q.width(), Q.height() };
+
+        // allocate a texture
+        auto id = allocateTexture(srcExtent, Q.format(), mips);
+
+        // upload the data to layer 0 mip 0
+        // this will convert layer 0 mip 0 into SHADER_READ_ONLY_OPTIMAL
+        uploadImageData(id, img, {{0,0}, {0,0}}, 0, 0);
+
+        if( getMipmapCount(id) > 1)
+        {
+            generateMipMaps(id,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        }
+        return id;
+    }
+    //=========================================================================================================================
+    template<typename Img_t>
+    void uploadImageData( idTexture2D dstId,
+                          Img_t const & img,
+                          VkRect2D dstRect = { {0,0}, {0,0}},
+                          uint32_t dstLayer = 0,
+                          uint32_t dstMip = 0)
+    {
+        ImgQuery<Img_t> Q(img);
+        VkExtent2D  srcExtent = { Q.width(), Q.height() };
+        void const * srcData = Q.data();
+        auto bbp = Q.bytesPerPixel();
+        if( dstRect.extent.width == 0)
+        {
+            dstRect.extent.width = srcExtent.width;
+        }
+        if( dstRect.extent.height == 0)
+        {
+            dstRect.extent.height = srcExtent.height;
+        }
+        auto byteSize = srcExtent.width*srcExtent.height*bbp;
+        uploadImageData(dstId, srcData, byteSize, srcExtent, dstRect, dstLayer, dstMip);
+    }
+
+    /**
+     * @brief uploadImageData
+     * @param dstId
+     * @param srcData
+     * @param srcByteSize
+     * @param srcExtent
+     * @param dstRect
+     * @param dstLayer
+     * @param dstMip
+     *
+     * Uploads data from the host to the GPU image.
+     * srcData/srcByteSize and srcExtent define the imagedata on the host,
+     * dstRect,dstLayer and dstMip define the location where the image will be
+     * copied into.
+     *
+     */
+    void uploadImageData( idTexture2D dstId,
+                          void const * srcData,
+                          uint32_t     srcByteSize,
+                          VkExtent2D   srcExtent,
+
+                          VkRect2D     dstRect,
+                          uint32_t     dstLayer,
+                          uint32_t     dstMip)
+    {
+        auto stg = _allocateStagingBuffer(srcData, srcByteSize);
+
+        _beginCommandBuffer([=](auto cmd)
+        {
+            _transitionLayout(cmd, m_images[dstId.index].image,
+                              VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                              dstLayer, 1,
+                              dstMip  , 1);
+
+            VkExtent3D _extent;
+            _extent.depth  = 1;
+            _extent.width  = std::min(m_images[dstId.index].info.extent.width  - dstRect.offset.x, dstRect.extent.width);
+            _extent.height = std::min(m_images[dstId.index].info.extent.height - dstRect.offset.y, dstRect.extent.height);
+
+            VkOffset3D _offset{ dstRect.offset.x, dstRect.offset.y, 0};
+
+            _copyBufferToImage(cmd, stg, srcExtent.width,srcExtent.height, dstId, _offset, _extent, dstLayer, dstMip);
+
+            _transitionLayout(cmd, m_images[dstId.index].image,
+                              VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                              dstLayer, 1,
+                              dstMip  , 1);
+        });
+
+        _destroyBuffer(stg);
+    }
+
+    /**
+     * @brief generateMipMaps
+     * @param id
+     * @param mip0InitialLayout
+     *
+     * Generate mipmaps for an image. This will generate the mipmaps by
+     * bliting Mip:0 to all the smaller mips
+     */
+    void generateMipMaps(idTexture2D id, VkImageLayout mip0InitialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+    {
+        VkFilter filter = VK_FILTER_LINEAR;
+
+        VkImageBlit region;
+        region.srcSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.srcSubresource.baseArrayLayer = 0;
+        region.srcSubresource.layerCount     = 1;
+        region.srcSubresource.mipLevel       = 0;
+
+        region.dstSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.dstSubresource.baseArrayLayer = 0;
+        region.dstSubresource.layerCount     = 1;
+        region.dstSubresource.mipLevel       = 0;
+
+        region.srcOffsets[0] = {0,0,0};
+        region.dstOffsets[0] = {0,0,0};
+
+        auto ext = m_images[id.index].info.extent;
+
+        region.srcOffsets[1] = {static_cast<int32_t>(ext.width),static_cast<int32_t>(ext.height),1};
+        region.dstOffsets[1] = {static_cast<int32_t>(ext.width),static_cast<int32_t>(ext.height),1};;
+
+        uint32_t maxMip = getMipmapCount(id);
+
+        auto image = m_images[id.index].image;
+
+        _beginCommandBuffer([=](auto cmd)
+        {
+            // transition the first mip level into
+            // source
+            _image_TransitionLayout(cmd,
+                                    image,
+                                    mip0InitialLayout,
+                                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                    0, 1,
+                                    0, 1);
+
+            for(uint32_t i=1;i<maxMip;i++)
+            {
+                auto reg = region;
+
+                reg.srcSubresource.mipLevel = i-1;
+                reg.srcOffsets[1].x >>= (i-1);
+                reg.srcOffsets[1].y >>= (i-1);
+               // reg.srcOffsets[1].z >>= (i-1);
+
+                reg.dstSubresource.mipLevel = i;
+                reg.dstOffsets[1].x >>= i;
+                reg.dstOffsets[1].y >>= i;
+               // reg.dstOffsets[1].z >>= i;
+
+                _image_TransitionLayout(cmd,
+                                        image,
+                                        VK_IMAGE_LAYOUT_UNDEFINED,
+                                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                        0, 1,
+                                        i, 1);
+
+                // convert layer i-1 into transfer src
+                // convert layer i into transfer dst
+                vkCmdBlitImage(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &reg,filter);
+
+                _image_TransitionLayout(cmd,
+                                        image,
+                                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                        VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                        0, 1,
+                                        i, 1);
+            }
+
+            _image_TransitionLayout(cmd,
+                                    image,
+                                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                    0, 1,
+                                    0, maxMip);
+        });
+
+    }
+
+
+    ImageInfo const& info(idTexture2D id) const
+    {
+        return m_images.at(id.index);
+    }
+    VkFormat getFormat(idTexture2D id) const
+    {
+        return m_images.at(id.index).info.format;
+    }
+    uint32_t formatSize(VkFormat f) const
+    {
+        assert( f == VK_FORMAT_R8G8B8A8_UNORM);
+        return 4;
+    }
+    uint32_t getMipmapCount(idTexture2D id) const
+    {
+        return m_images.at(id.index).info.mipLevels;
+    }
+    uint32_t getLayerCount(idTexture2D id) const
+    {
+        return m_images.at(id.index).info.arrayLayers;
+    }
+    VkExtent3D getExtent(idTexture2D id) const
+    {
+        return m_images.at(id.index).info.extent;
+    }
+
+
+
 
     /**
      * @brief update
@@ -591,6 +726,40 @@ protected:
         return I;
     }
 
+    void _copyBufferToImage( VkCommandBuffer cmd,
+                            _buffer srcBuffer,
+                            uint32_t srcImageWidth,
+                            uint32_t srcImageHeight,
+                            idTexture2D dstId,
+                            VkOffset3D dstOffset,
+                            VkExtent3D dstExtent,
+                            uint32_t   dstArrayBaseLayer,
+                            uint32_t   dstMipBaseLevel
+                          )
+    {
+        // do buffer copy
+        VkBufferImageCopy region = {};
+
+        region.bufferOffset                    = 0;
+        region.bufferRowLength                 = srcImageWidth;
+        region.bufferImageHeight               = srcImageHeight;
+        region.imageSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.baseArrayLayer = dstArrayBaseLayer;
+        region.imageSubresource.layerCount     = 1;
+        region.imageSubresource.mipLevel       = dstMipBaseLevel;
+        region.imageSubresource.layerCount     = 1;
+        region.imageOffset                     = dstOffset;
+        region.imageExtent                     = dstExtent;
+
+        vkCmdCopyBufferToImage(
+            cmd,
+            srcBuffer.first,
+            m_images[dstId.index].image,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            static_cast<uint32_t>(1),
+            &region
+        );
+    }
 
     void _destroyBuffer(_buffer buffer)
     {
@@ -644,6 +813,17 @@ protected:
         I.allocation = nullptr;
         I.image      = VK_NULL_HANDLE;
         I.imageView  = VK_NULL_HANDLE;
+    }
+
+    template<typename callable_t>
+    void _beginCommandBuffer(callable_t && C)
+    {
+        auto b = _allocateCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY, true);
+
+        C(b);
+
+        vkEndCommandBuffer(b);
+        _submitCommandBuffer(b, true);
     }
 
     VkCommandBuffer _allocateCommandBuffer(VkCommandBufferLevel level, bool begin)
