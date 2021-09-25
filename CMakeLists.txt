@@ -73,16 +73,19 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test" AND IS_DIRECTORY "${CMAKE_CURRENT_S
         ################################################################################
 
 
-
-
         ################################################################################
         # Build the SDLVulkanWindow as a library so that we can use it for the
         # examples/unit tests
         ################################################################################
         find_package(Vulkan)
 
-        add_subdirectory(third_party/vkw)
+        add_subdirectory(third_party/vkw_local)
+        #if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/vkw_local")
+        #else()
+        #    add_subdirectory(third_party/vkw)
+        #endif()
 
+        add_subdirectory(examples)
         ################################################################################
 
 

@@ -5,8 +5,8 @@ fmt/7.1.3
 vulkan-memory-allocator/2.3.0
 
 [options]
-sdl2:jack=False
-sdl2:shared=True
+sdl:jack=False
+sdl:shared=True
 
 
 [generators]

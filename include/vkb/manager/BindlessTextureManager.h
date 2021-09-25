@@ -202,10 +202,11 @@ public:
      * @param format
      * @return
      *
-     * Allocate a texture in the manager. Once a texture is allocated
-     * it is not destroyed unless you:
+     * Allocate a texture in the manager.
      */
-    idTexture2D allocateTexture(VkExtent2D extent, VkFormat format = VK_FORMAT_R8G8B8A8_UNORM, uint32_t mipMaps = 0)
+    idTexture2D allocateTexture(VkExtent2D extent,
+                                VkFormat format = VK_FORMAT_R8G8B8A8_UNORM,
+                                uint32_t mipMaps = 0)
     {
         int32_t j=0;
 
@@ -249,6 +250,33 @@ public:
         m_freeImages.push_back(i);
     }
 
+    /**
+     * @brief allocateTexture
+     * @param img
+     * @param mips
+     * @return
+     *
+     * Allocate a texture directrly from a host-image. To be able to
+     * use this function properly, you must define an ImgQuery<T> struct
+     * similar to how std::hash<T> works. Here is an example:
+     *
+     * namespace vkb{
+     * template<>
+     * struct ImgQuery<SimpleImage>
+     * {
+     *     SimpleImage const & I;
+     *     ImgQuery(SimpleImage const & i) : I(i)
+     *     {
+     *     }
+     *     void const * data() const;
+     *     uint32_t width() const;
+     *     uint32_t height() const;
+     *     uint32_t depth() const;
+     *     uint32_t bytesPerPixel() const;
+     *     VkFormat format() const;
+     * };
+     * }
+     */
     template<typename Img_t>
     idTexture2D allocateTexture( Img_t const & img, uint32_t mips = 0 )
     {
@@ -269,6 +297,17 @@ public:
         return id;
     }
     //=========================================================================================================================
+
+    std::string generateShaderFunctions(uint32_t setNumber) const
+    {
+        std::string out;
+        out += "layout (set = " + std::to_string(setNumber) + ", binding = 0) uniform sampler2D   u_TextureArray[    " + std::to_string(m_createInfo.totalTexture2D) + "];  \n";
+        //out += "layout (set = " + std::to_string(setNumber) + ", binding = 1) uniform samplerCube u_TextureCubeArray[" + std::to_string(m_createInfo.totalTexture2D) + "];  ";
+        return out;
+    }
+
+
+
     template<typename Img_t>
     void uploadImageData( idTexture2D dstId,
                           Img_t const & img,
@@ -352,7 +391,8 @@ public:
      * Generate mipmaps for an image. This will generate the mipmaps by
      * bliting Mip:0 to all the smaller mips
      */
-    void generateMipMaps(idTexture2D id, VkImageLayout mip0InitialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+    void generateMipMaps(idTexture2D id,
+                         VkImageLayout mip0InitialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
     {
         VkFilter filter = VK_FILTER_LINEAR;
 

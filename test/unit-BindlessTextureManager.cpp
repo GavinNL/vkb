@@ -1,53 +1,23 @@
 #include "catch.hpp"
 #include <fstream>
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_vulkan.h>
 
-#include <vkw/SDLVulkanWindow.h>
-#include <vkw/SDLVulkanWindow_INIT.inl>
-#include <vkw/SDLVulkanWindow_USAGE.inl>
-
-using namespace vkw;
-
-#include <vulkan/vulkan.hpp>
+#include "unit_helpers.h"
 
 #include <vkb/vkb.h>
 #include <vkb/utils/DynamicPipeline.h>
 #include <vkb/utils/DescriptorSetAllocator.h>
 #include <vkb/manager/BindlessTextureManager.h>
 
-using namespace vkw;
-
-static VKAPI_ATTR VkBool32 VKAPI_CALL VulkanReportFunc(
-    VkDebugReportFlagsEXT flags,
-    VkDebugReportObjectTypeEXT objType,
-    uint64_t obj,
-    size_t location,
-    int32_t code,
-    const char* layerPrefix,
-    const char* msg,
-    void* userData)
-{
-    (void)obj;
-    (void)flags;
-    (void)objType;
-    (void)location;
-    (void)code;
-    (void)userData;
-    printf("VULKAN VALIDATION: [%s] %s\n", layerPrefix, msg);
-    //throw std::runtime_error( msg );
-    return VK_FALSE;
-}
 
 struct SimpleImage
 {
     SimpleImage(uint32_t w, uint32_t h) : width(w), height(h)
     {
-        data.resize(w*h*4);
+        data.resize(w*h);
     }
-    uint32_t width;
-    uint32_t height;
-    std::vector<uint8_t> data;
+    uint32_t              width;
+    uint32_t              height;
+    std::vector<uint32_t> data;
 };
 
 namespace vkb
@@ -60,6 +30,7 @@ struct ImgQuery<SimpleImage>
     {
 
     }
+
     void const * data() const
     {
         return I.data.data();
@@ -90,21 +61,9 @@ struct ImgQuery<SimpleImage>
 
 SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
 {
-    SDL_Init(SDL_INIT_EVERYTHING);
-    auto window = new SDLVulkanWindow();
-
-    // 1. create the window
-    window->createWindow("Simple Deferred", SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED, 1024,768);
-
-    // 2. initialize the vulkan instance
-    SDLVulkanWindow::InitilizationInfo info;
-    info.callback = VulkanReportFunc;
-    window->createVulkanInstance( info);
-
-    // 3. Create the following objects:
-    //    instance, physical device, device, graphics/present queues,
-    //    swap chain, depth buffer, render pass and framebuffers
-    window->initSurface(SDLVulkanWindow::SurfaceInitilizationInfo());
+    // create a default window and initialize all vulkan
+    // objects.
+    auto window = createWindow(1024,768);
 
 
     // resize the framegraph to the size of the
@@ -121,17 +80,14 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
     Ci.device         = window->getDevice();
     Ci.allocator      = nullptr;// create it for us
     Ci.graphicsQueue  = window->getGraphicsQueue();
-    Ci.totalTexture2D = 32;
+    Ci.totalTexture2D = 1024;
     vkb::BindlessTextureManager tManager;
 
     tManager.create(Ci);
 
     auto id = tManager.allocateTexture({256,256});
-    uint8_t rawData[256*256*4];
 
     SimpleImage img(256,256);
-
-    tManager.uploadImageData(id, rawData,256*256*4, {256,256}, {{0,0},{256,256}},0,0);
 
     tManager.uploadImageData(id, img);
 
@@ -160,7 +116,9 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
 
     S.destroyAll(window->getDevice());
 
-    delete window;
+    window->destroy();
+    window.reset();
+
     SDL_Quit();
 
 }
