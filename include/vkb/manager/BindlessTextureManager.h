@@ -74,22 +74,21 @@ struct ImageInfo
 struct DescriptorChain
 {
     VkDescriptorSet     m_descriptorSet;
-    std::vector<size_t> dirty;
+    std::vector<size_t> m_dirty;
 
     void update(VkDevice device, std::vector<ImageInfo> const & images)
     {
         std::vector<VkWriteDescriptorSet> writes;
         std::vector<VkDescriptorImageInfo> imageInfos;
-        writes.reserve(dirty.size());
-        imageInfos.reserve(dirty.size());
+        writes.reserve(m_dirty.size());
+        imageInfos.reserve(m_dirty.size());
 
-        std::sort(dirty.begin(), dirty.end());
-        dirty.erase( std::unique( dirty.begin(), dirty.end()), dirty.end());
+        std::sort(m_dirty.begin(), m_dirty.end());
+        m_dirty.erase( std::unique( m_dirty.begin(), m_dirty.end()), m_dirty.end());
 
 
-        for(auto j : dirty)
+        for(auto j : m_dirty)
         {
-
             auto & b = writes.emplace_back();
             b.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             b.dstArrayElement = static_cast<uint32_t>(j);
@@ -100,6 +99,17 @@ struct DescriptorChain
             auto &img         = imageInfos.emplace_back();
             {
                 auto i = std::min( images.size()-1, j);
+
+                // if the image doesn't exist, (ie: it has been destroyed)
+                // then use the first image in the array instead.
+                // this is usually the "null image"
+                if( images[i].image == VK_NULL_HANDLE)
+                {
+                    i = 0;
+                }
+
+                assert( images[i].image != VK_NULL_HANDLE );
+
                 img.imageLayout   = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                 img.imageView     = images[i].imageView;
                 img.sampler       = images[i].sampler.linear;
@@ -108,22 +118,48 @@ struct DescriptorChain
             b.pImageInfo      = &img;
             b.descriptorCount = 1;
         }
-        if( dirty.size() != 0)
+        if( m_dirty.size() != 0)
         {
-            std::cerr << "Updating: " << m_descriptorSet << ": " << dirty.size() << " descriptors" << std::endl;
+            std::cerr << "Updating: " << m_descriptorSet << ": " << m_dirty.size() << " descriptors" << std::endl;
         }
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-        dirty.clear();
+        m_dirty.clear();
     }
 };
 
 
-
+/**
+ * @brief The BindlessTextureManager class
+ *
+ * The BindlessTextureManager manages an array-of-textures that can be
+ * used within your rendering engine.
+ *
+ * How it works:
+ *
+ * You first create your manager and set the basic parameters. such as
+ * the total textures it can manage.
+ *
+ * When you allocate a texture from the manager of a particular size,
+ * it will generate the vulkan image/memory and immediately bind it
+ * to the internal descriptor set, it will return an INDEX into
+ * the array-of-textures that you can use in your shader (pass it to the shader as a pushconst)
+ *
+ * The manager also provides functions to copy image data to the GPU.
+ *
+ * When you free the texture index. it will flag that texture as "freed" but does
+ * not actually free the memory. The next time you allocate a new texture
+ * with the same dimensions, it will return that same index to you so you
+ * can reuse it.
+ *
+ * If the manager cannot find another free texture of the same size, it will allocate
+ * a new image and memory.
+ *
+ *
+ */
 class BindlessTextureManager
 {
 public:
-
     struct CreateInfo
     {
         VkInstance       instance       = VK_NULL_HANDLE;
@@ -309,6 +345,9 @@ public:
         }
         return id;
     }
+
+
+
     //=========================================================================================================================
 
     std::string generateShaderFunctions(uint32_t setNumber) const
@@ -552,7 +591,7 @@ public:
     {
         for(auto & x : m_dChain)
         {
-            x.dirty.push_back(index);
+            x.m_dirty.push_back(index);
         }
     }
 
