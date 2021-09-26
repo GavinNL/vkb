@@ -32,7 +32,8 @@ foreach(file ${files})
                                     CONAN_PKG::spirv-cross
                                     CONAN_PKG::vulkan-memory-allocator
                                     vkb::vkb
-                                    vkw::vkw)
+                                    vkw::vkw
+                                    gul::gul)
 
 
     message("  ${UNIT_EXE_NAME} ")

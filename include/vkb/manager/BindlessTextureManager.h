@@ -89,24 +89,29 @@ struct DescriptorChain
 
         for(auto j : dirty)
         {
-            auto i = std::min( images.size()-1, j);
 
             auto & b = writes.emplace_back();
             b.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            b.dstArrayElement = static_cast<uint32_t>(i);
+            b.dstArrayElement = static_cast<uint32_t>(j);
             b.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             b.dstBinding      = 0;
             b.dstSet          = m_descriptorSet;
 
             auto &img         = imageInfos.emplace_back();
-            img.imageLayout   = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            img.imageView     = images[i].imageView;
-            img.sampler       = images[i].sampler.linear;
+            {
+                auto i = std::min( images.size()-1, j);
+                img.imageLayout   = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                img.imageView     = images[i].imageView;
+                img.sampler       = images[i].sampler.linear;
+            }
 
             b.pImageInfo      = &img;
             b.descriptorCount = 1;
         }
-        std::cerr << "Updating: " << dirty.size() << " descriptors" << std::endl;
+        if( dirty.size() != 0)
+        {
+            std::cerr << "Updating: " << m_descriptorSet << ": " << dirty.size() << " descriptors" << std::endl;
+        }
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
         dirty.clear();
@@ -121,12 +126,14 @@ public:
 
     struct CreateInfo
     {
-        VkInstance       instance;
-        VkPhysicalDevice physicalDevice;
-        VkDevice         device;
-        VkQueue          graphicsQueue; // the queue used for submitting commands to
-        VmaAllocator     allocator = nullptr; // can be left null, will create
+        VkInstance       instance       = VK_NULL_HANDLE;
+        VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+        VkDevice         device         = VK_NULL_HANDLE;
+        VkQueue          graphicsQueue  = VK_NULL_HANDLE;// the queue used for submitting commands to
+        VmaAllocator     allocator      = nullptr;       // can be left null, will create
 
+        // which stages are the textures available to
+        VkShaderStageFlags stageFlags   = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         //
         uint32_t totalTexture2D = 16;
 
@@ -158,6 +165,12 @@ public:
             }
             m_selfManagedAllocator = true;
         }
+
+        assert( m_createInfo.allocator != nullptr);
+        assert( m_createInfo.device != VK_NULL_HANDLE);
+        assert( m_createInfo.physicalDevice != VK_NULL_HANDLE);
+        assert( m_createInfo.instance != VK_NULL_HANDLE);
+        assert( m_createInfo.graphicsQueue != VK_NULL_HANDLE);
         m_commandPool = _createCommandPool();
         init(m_createInfo.totalTexture2D);
         return true;
@@ -517,8 +530,24 @@ public:
             throw std::runtime_error("Cannot update images. Need to allocate at least 1 image");
         }
         m_dChain[ getCurrentChain() ].update(getDevice(), m_images);
+    }
+
+    void nextChain()
+    {
         m_currentChain = (m_currentChain+1) % m_dChain.size();
     }
+    void bind(VkCommandBuffer cmd, uint32_t set, VkPipelineLayout layout)
+    {
+        auto dset = m_dChain[ getCurrentChain() ].m_descriptorSet;
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, set, 1, &dset, 0, nullptr);
+    }
+
+    size_t getCurrentChain() const
+    {
+        return m_currentChain;
+    }
+
+
     void setDirty(size_t index)
     {
         for(auto & x : m_dChain)
@@ -526,10 +555,7 @@ public:
             x.dirty.push_back(index);
         }
     }
-    size_t getCurrentChain() const
-    {
-        return m_currentChain;
-    }
+
 
 
 
@@ -582,6 +608,11 @@ public:
         vmaUnmapMemory(getAllocator(), staging.second);
         _destroyBuffer(staging);
     }
+
+    VkDescriptorSetLayout getDescriptorSetLayout() const
+    {
+        return m_layout;
+    }
 protected:
 
     void init(uint32_t total2DTextures)
@@ -593,7 +624,7 @@ protected:
 
         L1.binding         = 0;
         L1.descriptorCount = total2DTextures;
-        L1.stageFlags      = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        L1.stageFlags      = m_createInfo.stageFlags;
         L1.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 
         ci.sType           = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -609,7 +640,7 @@ protected:
 
         std::vector<VkDescriptorPoolSize> sizes;
 
-        sizes.push_back( { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, total2DTextures * maxSets * 1000});
+        sizes.push_back( { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, total2DTextures * maxSets * m_createInfo.totalTexture2D});
 
         VkDescriptorPoolCreateInfo poolCI = {};
         poolCI.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -620,7 +651,7 @@ protected:
         VK_CHECK_RESULT( vkCreateDescriptorPool(getDevice(), &poolCI, nullptr, &m_descriptorPool) );
 
         //==================
-        for(size_t i=0;i<2;i++)
+        for(size_t i=0;i<5;i++)
         {
             VkDescriptorSetAllocateInfo allocInfo = {};
             allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -684,7 +715,7 @@ protected:
         VmaAllocationInfo allocInfo;
 
         VkImageCreateInfo & imageInfo_c = imageInfo;
-        vmaCreateImage(getAllocator(),  &imageInfo_c,  &allocCInfo, &image, &allocation, &allocInfo);
+        VK_CHECK_RESULT( vmaCreateImage(getAllocator(),  &imageInfo_c,  &allocCInfo, &image, &allocation, &allocInfo) );
 
         ImageInfo I;
         I.image      = image;
