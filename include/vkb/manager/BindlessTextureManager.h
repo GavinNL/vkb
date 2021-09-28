@@ -74,9 +74,15 @@ struct ImageInfo
 struct DescriptorChain
 {
     VkDescriptorSet     m_descriptorSet;
-    std::vector<size_t> m_dirty;
+    std::vector<size_t> m_dirtyImage2D;
+
 
     void update(VkDevice device, std::vector<ImageInfo> const & images)
+    {
+        update(device, images, m_dirtyImage2D);
+    }
+protected:
+    void update(VkDevice device, std::vector<ImageInfo> const & images, std::vector<size_t> & m_dirty)
     {
         std::vector<VkWriteDescriptorSet> writes;
         std::vector<VkDescriptorImageInfo> imageInfos;
@@ -171,8 +177,8 @@ public:
         // which stages are the textures available to
         VkShaderStageFlags stageFlags   = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         //
-        uint32_t totalTexture2D = 16;
-
+        uint32_t totalTexture2D   = 16;
+        uint32_t totalTextureCube = 0;
     };
 
     using _buffer = std::pair<VkBuffer, VmaAllocation>;
@@ -208,7 +214,7 @@ public:
         assert( m_createInfo.instance != VK_NULL_HANDLE);
         assert( m_createInfo.graphicsQueue != VK_NULL_HANDLE);
         m_commandPool = _createCommandPool();
-        init(m_createInfo.totalTexture2D);
+        init(m_createInfo.totalTexture2D, m_createInfo.totalTextureCube);
         return true;
     }
 
@@ -220,11 +226,17 @@ public:
      */
     void destroy()
     {
-        while(m_images.size())
+        while(m_image2D.images.size())
         {
-            destroyImage(m_images.back());
-            m_images.pop_back();
+            destroyImage(m_image2D.images.back());
+            m_image2D.images.pop_back();
         }
+        while(m_imageCube.images.size())
+        {
+            destroyImage(m_imageCube.images.back());
+            m_imageCube.images.pop_back();
+        }
+
         vkDestroyCommandPool(getDevice(), m_commandPool, nullptr);
 
         // destroy the descriptor pool
@@ -259,15 +271,17 @@ public:
     {
         int32_t j=0;
 
+        auto &images = m_image2D.images;
+        auto &free   = m_image2D.free;
         // Loop through all the free images.
         // These are images which were no longer needed, but are still
         // allocated. They can be reused.
         // So find one that fits the dimensions/format/etc
         // and return that one. none exist, then
         // we will have to create a new texture
-        for(auto & i : m_freeImages)
+        for(auto & i : free)
         {
-            auto & info = m_images[i].info;
+            auto & info = images[i].info;
             if( info.extent.width == extent.width &&
                 info.extent.height == extent.height &&
                 info.extent.depth == 1 &&
@@ -279,11 +293,22 @@ public:
             ++j;
         }
         auto img = image_Create(extent.width,extent.height,1, format, VK_IMAGE_VIEW_TYPE_2D, 1, mipMaps, {});
-        m_images.push_back(img);
-        setDirty(m_images.size()-1);
-        return { static_cast<int32_t>(m_images.size()-1) };
+        images.push_back(img);
+
+        idTexture2D id{ static_cast<int32_t>(images.size()-1) };
+        _beginCommandBuffer([=](auto cmd)
+        {
+            _transitionLayout(cmd, getImage(id),
+                              VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                              0, getLayerCount(id),
+                              0  , getMipmapCount(id));
+        });
+
+        setDirty(images.size()-1);
+        return id;
     }
 
+    //=========================================================================================================================
     /**
      * @brief freeTexture
      * @param id
@@ -296,9 +321,13 @@ public:
     void freeTexture(idTexture2D id)
     {
         auto i = static_cast<size_t>(id.index);
-        m_freeImages.push_back(i);
+        m_image2D.free.push_back(i);
     }
-
+    void freeTexture(idTextureCube id)
+    {
+        auto i = static_cast<size_t>(id.index);
+        m_imageCube.free.push_back(i);
+    }
     /**
      * @brief allocateTexture
      * @param img
@@ -341,7 +370,7 @@ public:
 
         if( getMipmapCount(id) > 1)
         {
-            generateMipMaps(id,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            generateMipMaps(id,0,1,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         }
         return id;
     }
@@ -410,6 +439,8 @@ public:
     {
         auto stg = _allocateStagingBuffer(srcData, srcByteSize);
 
+        auto & m_images = m_image2D.images;
+
         _beginCommandBuffer([=](auto cmd)
         {
             _transitionLayout(cmd, m_images[dstId.index].image,
@@ -444,32 +475,32 @@ public:
      * bliting Mip:0 to all the smaller mips
      */
     void generateMipMaps(idTexture2D id,
+                         uint32_t baseArrayLayer, uint32_t layerCount,
                          VkImageLayout mip0InitialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
     {
         VkFilter filter = VK_FILTER_LINEAR;
 
         VkImageBlit region;
         region.srcSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
-        region.srcSubresource.baseArrayLayer = 0;
-        region.srcSubresource.layerCount     = 1;
+        region.srcSubresource.baseArrayLayer = baseArrayLayer;
+        region.srcSubresource.layerCount     = std::min(layerCount-baseArrayLayer, layerCount);
         region.srcSubresource.mipLevel       = 0;
 
         region.dstSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
-        region.dstSubresource.baseArrayLayer = 0;
-        region.dstSubresource.layerCount     = 1;
+        region.dstSubresource.baseArrayLayer = baseArrayLayer;
+        region.dstSubresource.layerCount     = std::min(layerCount-baseArrayLayer, layerCount);;
         region.dstSubresource.mipLevel       = 0;
 
         region.srcOffsets[0] = {0,0,0};
         region.dstOffsets[0] = {0,0,0};
 
-        auto ext = m_images[id.index].info.extent;
+        auto ext = getExtent(id);
 
         region.srcOffsets[1] = {static_cast<int32_t>(ext.width),static_cast<int32_t>(ext.height),1};
         region.dstOffsets[1] = {static_cast<int32_t>(ext.width),static_cast<int32_t>(ext.height),1};;
 
         uint32_t maxMip = getMipmapCount(id);
-
-        auto image = m_images[id.index].image;
+        auto     image  = getImage(id);
 
         _beginCommandBuffer([=](auto cmd)
         {
@@ -525,31 +556,60 @@ public:
 
     }
 
-
-    ImageInfo const& info(idTexture2D id) const
+    template<typename idType>
+    ImageInfo & info(idType id)
     {
-        return m_images.at(id.index);
+        if constexpr ( std::is_same_v<idType, idTexture2D >)
+        {
+            return m_image2D.images.at(id.index);
+        }
+        if constexpr ( std::is_same_v<idType, idTextureCube >)
+        {
+            return m_imageCube.images.at(id.index);
+        }
     }
-    VkFormat getFormat(idTexture2D id) const
+    template<typename idType>
+    ImageInfo const & info(idType id) const
     {
-        return m_images.at(id.index).info.format;
+        if constexpr ( std::is_same_v<idType, idTexture2D >)
+        {
+            return m_image2D.images.at(id.index);
+        }
+        if constexpr ( std::is_same_v<idType, idTextureCube >)
+        {
+            return m_imageCube.images.at(id.index);
+        }
+    }
+
+    template<typename idType>
+    VkFormat getFormat(idType id) const
+    {
+        return info(id).format;
     }
     uint32_t formatSize(VkFormat f) const
     {
         assert( f == VK_FORMAT_R8G8B8A8_UNORM);
         return 4;
     }
-    uint32_t getMipmapCount(idTexture2D id) const
+    template<typename idType>
+    uint32_t getMipmapCount(idType id) const
     {
-        return m_images.at(id.index).info.mipLevels;
+        return info(id).info.mipLevels;
     }
-    uint32_t getLayerCount(idTexture2D id) const
+    template<typename idType>
+    uint32_t getLayerCount(idType id) const
     {
-        return m_images.at(id.index).info.arrayLayers;
+        return info(id).info.arrayLayers;
     }
-    VkExtent3D getExtent(idTexture2D id) const
+    template<typename idType>
+    VkExtent3D getExtent(idType id) const
     {
-        return m_images.at(id.index).info.extent;
+        return info(id).info.extent;
+    }
+    template<typename idType>
+    VkImage getImage(idType id) const
+    {
+        return info(id).image;
     }
 
 
@@ -564,11 +624,11 @@ public:
      */
     void update()
     {
-        if(m_images.size() == 0)
+        if(m_image2D.images.size() == 0)
         {
             throw std::runtime_error("Cannot update images. Need to allocate at least 1 image");
         }
-        m_dChain[ getCurrentChain() ].update(getDevice(), m_images);
+        m_dChain[ getCurrentChain() ].update(getDevice(), m_image2D.images);
     }
 
     void nextChain()
@@ -591,7 +651,7 @@ public:
     {
         for(auto & x : m_dChain)
         {
-            x.m_dirty.push_back(index);
+            x.m_dirtyImage2D.push_back(index);
         }
     }
 
@@ -654,20 +714,30 @@ public:
     }
 protected:
 
-    void init(uint32_t total2DTextures)
+    void init(uint32_t total2DTextures, uint32_t totalTextureCube)
     {
         VkDescriptorSetLayoutCreateInfo ci = {};
 
         std::vector<VkDescriptorSetLayoutBinding> bindings;
-        auto & L1 = bindings.emplace_back();
 
-        L1.binding         = 0;
-        L1.descriptorCount = total2DTextures;
-        L1.stageFlags      = m_createInfo.stageFlags;
-        L1.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        {
+            auto & L1 = bindings.emplace_back();
+            L1.binding         = 0;
+            L1.descriptorCount = total2DTextures;
+            L1.stageFlags      = m_createInfo.stageFlags;
+            L1.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        }
+        if(totalTextureCube > 0)
+        {
+            auto & L1 = bindings.emplace_back();
+            L1.binding         = 1;
+            L1.descriptorCount = totalTextureCube;
+            L1.stageFlags      = m_createInfo.stageFlags;
+            L1.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        }
 
         ci.sType           = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        ci.bindingCount    = 1;
+        ci.bindingCount    = static_cast<uint32_t>(bindings.size());
         ci.pBindings       = bindings.data();
         ci.flags           = {};
 
@@ -679,7 +749,7 @@ protected:
 
         std::vector<VkDescriptorPoolSize> sizes;
 
-        sizes.push_back( { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, total2DTextures * maxSets * m_createInfo.totalTexture2D});
+        sizes.push_back( { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, (totalTextureCube + total2DTextures) * maxSets });
 
         VkDescriptorPoolCreateInfo poolCI = {};
         poolCI.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -704,12 +774,33 @@ protected:
             m_dChain.emplace_back().m_descriptorSet = dSet;
         }
 
+        allocateTexture({16,16}, VK_FORMAT_R8G8B8A8_UNORM, 0);
         for(size_t i=0;i<total2DTextures;i++)
         {
             setDirty(i);
         }
     }
 
+    static uint32_t calculateMipMaps(VkExtent3D extent)
+    {
+        auto w = extent.width;
+        auto h = std::max(w,extent.height);
+        auto d = std::max(h,extent.depth);
+        uint32_t mipLevels = 1 + static_cast<uint32_t>(std::floor(std::log2(d)));
+        return mipLevels;
+    }
+    static uint32_t calculateMipMaps(VkExtent2D extent)
+    {
+        auto w = extent.width;
+        auto h = std::max(w,extent.height);
+        uint32_t mipLevels = 1 + static_cast<uint32_t>(std::floor(std::log2(h)));
+        return mipLevels;
+    }
+    static uint32_t calculateMipMaps(uint32_t extent)
+    {
+        auto w = extent;
+        return  1 + static_cast<uint32_t>(std::floor(std::log2(w)));
+    }
 
     ImageInfo  image_Create( uint32_t width, uint32_t height, uint32_t depth
                              ,VkFormat format
@@ -736,10 +827,7 @@ protected:
 
         if( imageInfo.mipLevels == 0)
         {
-            auto w = width;
-            auto h = std::max(w,height);
-            auto d = std::max(h,depth);
-            imageInfo.mipLevels = 1 + static_cast<uint32_t>(std::floor(std::log2(d)));
+            imageInfo.mipLevels = calculateMipMaps( VkExtent2D{width, height});
             miplevels = imageInfo.mipLevels;
         }
 
@@ -847,6 +935,7 @@ protected:
                             uint32_t   dstMipBaseLevel
                           )
     {
+        auto & m_images = m_image2D.images;
         // do buffer copy
         VkBufferImageCopy region = {};
 
@@ -1119,8 +1208,13 @@ protected:
     VkDescriptorPool      m_descriptorPool;
     VkCommandPool         m_commandPool;
 
-    std::vector<ImageInfo>       m_images;
-    std::vector<size_t>          m_freeImages;
+    struct
+    {
+        std::vector<ImageInfo>       images;
+        std::vector<size_t>          free;
+    } m_image2D, m_imageCube;
+    //std::vector<ImageInfo>       m_images;
+    //std::vector<size_t>          m_freeImages;
     std::vector<DescriptorChain> m_dChain;
     CreateInfo                   m_createInfo;
     bool                         m_selfManagedAllocator = false;
