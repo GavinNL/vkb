@@ -717,7 +717,19 @@ public:
         {
             throw std::runtime_error("Cannot update images. Need to allocate at least 1 image");
         }
-        m_dChain[ getCurrentChain() ].update(getDevice(), m_image2D.images);
+        auto   chainIndex = getCurrentChain();
+        auto   set        = m_dsetChain.at(chainIndex);
+
+        {
+            auto & chainLink = bindingInfo<idTexture2D>().arrayInfo.at(chainIndex);
+            _updateAllDirty(getDevice(), set, chainLink.binding, bindingInfo<idTexture2D>().images, chainLink.dirty);
+        }
+        {
+            auto & chainLink = bindingInfo<idTextureCube>().arrayInfo.at(chainIndex);
+            _updateAllDirty(getDevice(), set, chainLink.binding, bindingInfo<idTextureCube>().images, chainLink.dirty);
+        }
+
+        m_dChain[ getCurrentChain() ].update(getDevice(),      m_image2D.images);
         m_dChain[ getCurrentChain() ].updateCubes(getDevice(), m_imageCube.images);
     }
 
@@ -879,14 +891,13 @@ protected:
 
             {
                 auto & dArrayInfo = bindingInfo<idTexture2D>().arrayInfo.emplace_back();
-                dArrayInfo.set     = dSet;
                 dArrayInfo.binding = idTexture2D::binding;
             }
             {
                 auto & dArrayInfo = bindingInfo<idTexture2D>().arrayInfo.emplace_back();
-                dArrayInfo.set     = dSet;
                 dArrayInfo.binding = idTextureCube::binding;
             }
+            m_dsetChain.push_back(dSet);
         }
 
 
@@ -1333,7 +1344,6 @@ protected:
 
     struct DescriptorArrayInfo
     {
-        VkDescriptorSet     set;
         uint32_t            binding;
         std::vector<size_t> dirty;
     };
@@ -1345,8 +1355,11 @@ protected:
         std::vector<DescriptorArrayInfo> arrayInfo; // one for each chain
     };
 
-    bindingInfo m_image2D;
-    bindingInfo m_imageCube;
+    //===================================================
+    std::vector<VkDescriptorSet> m_dsetChain;
+    bindingInfo                  m_image2D;
+    bindingInfo                  m_imageCube;
+    //===================================================
 
     template<typename idType>
     bindingInfo & bindingInfo()
@@ -1371,6 +1384,66 @@ protected:
         {
             return m_imageCube;
         }
+    }
+
+    void _updateAllDirty(VkDevice device, VkDescriptorSet descriptorSet, uint32_t binding, std::vector<ImageInfo> const & images, std::vector<size_t> & m_dirty)
+    {
+        std::vector<VkWriteDescriptorSet> writes;
+        std::vector<VkDescriptorImageInfo> imageInfos;
+        writes.reserve(m_dirty.size());
+        imageInfos.reserve(m_dirty.size());
+
+        std::sort(m_dirty.begin(), m_dirty.end());
+        m_dirty.erase( std::unique( m_dirty.begin(), m_dirty.end()), m_dirty.end());
+
+        for(auto j : m_dirty)
+        {
+            auto & b = writes.emplace_back();
+            b.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            b.dstArrayElement = static_cast<uint32_t>(j);
+            b.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            b.dstBinding      = binding;
+            b.dstSet          = descriptorSet;
+
+            auto &img         = imageInfos.emplace_back();
+            {
+                auto i = std::min( images.size()-1, j);
+
+                // if the image doesn't exist, (ie: it has been destroyed)
+                // then use the first image in the array instead.
+                // this is usually the "null image"
+                if( images[i].image == VK_NULL_HANDLE)
+                {
+                    auto it = std::find_if( images.begin(),
+                                            images.end(),
+                                            [](auto & img)
+                                            {
+                                                return img.image != VK_NULL_HANDLE;
+                                            });
+                    if( it == images.end())
+                    {
+                        throw std::runtime_error("Image array has no valid images");
+                    }
+                    i = static_cast<size_t>(std::distance(images.begin(), it));
+                }
+
+                assert( images[i].image != VK_NULL_HANDLE );
+
+                img.imageLayout   = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                img.imageView     = images[i].imageView;
+                img.sampler       = images[i].sampler.linear;
+            }
+
+            b.pImageInfo      = &img;
+            b.descriptorCount = 1;
+        }
+        if( m_dirty.size() != 0)
+        {
+            std::cerr << "Updating: " << descriptorSet << ": " << m_dirty.size() << " descriptors" << std::endl;
+        }
+
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        m_dirty.clear();
     }
 
     std::vector<DescriptorChain> m_dChain;
