@@ -69,84 +69,6 @@ struct ImageInfo
     } sampler;
 };
 
-struct DescriptorChain
-{
-    VkDescriptorSet     m_descriptorSet;
-    std::vector<size_t> m_dirtyImage2D;
-    std::vector<size_t> m_dirtyImageCube;
-
-
-    void update(VkDevice device, std::vector<ImageInfo> const & images)
-    {
-        update(device, images, m_dirtyImage2D, 0);
-    }
-    void updateCubes(VkDevice device, std::vector<ImageInfo> const & images)
-    {
-        update(device, images, m_dirtyImageCube, 1);
-    }
-protected:
-    void update(VkDevice device, std::vector<ImageInfo> const & images, std::vector<size_t> & m_dirty, uint32_t binding)
-    {
-        std::vector<VkWriteDescriptorSet> writes;
-        std::vector<VkDescriptorImageInfo> imageInfos;
-        writes.reserve(m_dirty.size());
-        imageInfos.reserve(m_dirty.size());
-
-        std::sort(m_dirty.begin(), m_dirty.end());
-        m_dirty.erase( std::unique( m_dirty.begin(), m_dirty.end()), m_dirty.end());
-
-        for(auto j : m_dirty)
-        {
-            auto & b = writes.emplace_back();
-            b.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            b.dstArrayElement = static_cast<uint32_t>(j);
-            b.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            b.dstBinding      = binding;
-            b.dstSet          = m_descriptorSet;
-
-            auto &img         = imageInfos.emplace_back();
-            {
-                auto i = std::min( images.size()-1, j);
-
-                // if the image doesn't exist, (ie: it has been destroyed)
-                // then use the first image in the array instead.
-                // this is usually the "null image"
-                if( images[i].image == VK_NULL_HANDLE)
-                {
-                    auto it = std::find_if( images.begin(),
-                                            images.end(),
-                                            [](auto & img)
-                                            {
-                                                return img.image != VK_NULL_HANDLE;
-                                            });
-                    if( it == images.end())
-                    {
-                        throw std::runtime_error("Image array has no valid images");
-                    }
-                    i = static_cast<size_t>(std::distance(images.begin(), it));
-                }
-
-                assert( images[i].image != VK_NULL_HANDLE );
-
-                img.imageLayout   = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                img.imageView     = images[i].imageView;
-                img.sampler       = images[i].sampler.linear;
-            }
-
-            b.pImageInfo      = &img;
-            b.descriptorCount = 1;
-        }
-        if( m_dirty.size() != 0)
-        {
-            std::cerr << "Updating: " << m_descriptorSet << ": " << m_dirty.size() << " descriptors" << std::endl;
-        }
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-        m_dirty.clear();
-    }
-};
-
-
 /**
  * @brief The BindlessTextureManager class
  *
@@ -174,6 +96,26 @@ protected:
  * a new image and memory.
  *
  *
+ * You should use the textures in your shader like this:
+ *
+ * //========================================================================
+ * // Bindless Texture
+ * //========================================================================
+ * layout (set = 0, binding = 0) uniform sampler2D    u_TextureArray[1024];
+ * layout (set = 0, binding = 1) uniform samplerCube  u_TextureCubeArray[1024];
+ *
+ *
+ * vec4 bindlessTexture(int index, vec2 fragTexCoord)
+ * {
+ *     return texture( u_TextureArray[ clamp(index, 0, 1023) ], fragTexCoord);
+ * }
+ * vec4 bindlessTextureCube(int index, vec3 fragTexCoord)
+ * {
+ *     return texture( u_TextureCubeArray[ clamp(index, 0, 1023) ], fragTexCoord);
+ * }
+ *
+ * //========================================================================
+ *
  */
 class BindlessTextureManager
 {
@@ -190,7 +132,7 @@ public:
         VkShaderStageFlags stageFlags   = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         //
         uint32_t totalTexture2D   = 16;
-        uint32_t totalTextureCube = 0;
+        uint32_t totalTextureCube = 16;
     };
 
     using _buffer = std::pair<VkBuffer, VmaAllocation>;
@@ -204,6 +146,9 @@ public:
      */
     bool create(CreateInfo const & C)
     {
+        static_assert (sizeof(idTexture_t<0>)==sizeof(uint32_t),"");
+        static_assert (sizeof(idTexture_t<1>)==sizeof(uint32_t),"");
+        static_assert (sizeof(idTexture_t<2>)==sizeof(uint32_t),"");
         m_createInfo = C;
         if( m_createInfo.allocator == nullptr)
         {
@@ -268,6 +213,33 @@ public:
 
     //=========================================================================================================================
     // Simple Texture Management
+    //
+    // How it works:
+    //
+    //   The BindlessTextureManager manges a multiple array-of-textures,
+    //   one for each type of texture: texture2D, textureCube, etc
+    //
+    //   When you call allocateTexture( ), it will create a texture
+    //   and place it into one of the available slots in the array-of-textures
+    //   you can then use that texture right away in your shader my indexing into
+    //   the array of textures.
+    //
+    //   When you free the texture, it does not destroy the data. It will mark the
+    //   image index as "free". You can still continue to index into that array
+    //   index.
+    //
+    //   When you call allocateTexture() again, it will seach for a "free" image with
+    //   the same dimensions and format to use and return that index instead.
+    //   You can then use that index to copy new image data over.
+    //
+    //   If it cannot find a free image, it will allocate a new image if there is
+    //   available indices left int he array-of-textures. If there are no more indices
+    //   it will destroy any free images currently available to make room.
+    //
+    //   When you call allocateTexture, it returns an idTextureXXXXX. This is
+    //   simply a wrapper around an index into the array-of-textures
+    //   You can copy this index into your user usring PUSH CONSTANTS so that you
+    //   know how to index into the array-of-textures
     //=========================================================================================================================
     /**
      * @brief allocateTexture
@@ -419,9 +391,10 @@ public:
 
 
     //=========================================================================================================================
-    void destroyTexture(idTexture2D id)
+    template<typename idType>
+    void destroyTexture(idType id)
     {
-        destroyImage( bindingInfo<idTexture2D>().images[static_cast<uint32_t>(id.index)] );
+        destroyImage( bindingInfo<idType>().images[static_cast<uint32_t>(id.index)] );
     }
     //=========================================================================================================================
     /**
@@ -479,7 +452,7 @@ public:
     {
         std::string out;
         out += "layout (set = " + std::to_string(setNumber) + ", binding = 0) uniform sampler2D   u_TextureArray[    " + std::to_string(m_createInfo.totalTexture2D) + "];  \n";
-        //out += "layout (set = " + std::to_string(setNumber) + ", binding = 1) uniform samplerCube u_TextureCubeArray[" + std::to_string(m_createInfo.totalTexture2D) + "];  ";
+        out += "layout (set = " + std::to_string(setNumber) + ", binding = 1) uniform samplerCube u_TextureCubeArray[" + std::to_string(m_createInfo.totalTextureCube) + "];  ";
         return out;
     }
 
@@ -704,6 +677,38 @@ public:
 
 
 
+    //===================================================================================================
+    // Texture Manager Usage:
+    //
+    // To use the texture manager during your render loop:
+    // at the start of the frame you should call:
+    //
+    //      TextureManager::nextChain();
+    //      TextureManager::update();
+    //
+    // This updates all images that have been flaged as dirty and performs
+    // a descriptorWrite on all of them.
+    //
+    //
+    //
+    // For each graphics pipeline that wants to use the textures
+    // you should make sure you create your pipeline layout
+    // with the descriptor set layout managed by the TextureManager
+    //
+    //  TextureManager::getDescriptorSetLayout()
+    //
+    // The texture manger's textures should all be used on a single set
+    // set 0 is probably the easest one to use.
+    //  VkPipelineLayoutCreateInfo ci = {};
+    //  ci.pSetLayouts = {  TextureManager::getDescriptorSetLayout(),
+    //                      // your other set layouts };
+    //
+    //
+    // Then when you bind the pipeline, you should also bind the texture
+    // manager:
+    //
+    //   TextureManager::bind(commandBuffer, 0, pipelineLayout);
+    //===================================================================================================
     /**
      * @brief update
      *
@@ -720,6 +725,12 @@ public:
         auto   chainIndex = getCurrentChain();
         auto   set        = m_dsetChain.at(chainIndex);
 
+        // at this point, _updateAllDirty will go through all
+        // the indices in chainLink.dirty, and perform
+        // a descriptor write on those indices.
+        // if the VkImage for that array index
+        // is a null handle (ie: it has been destroyed)
+        // then it will use the VkImage in index[ 0 ]
         {
             auto & chainLink = bindingInfo<idTexture2D>().arrayInfo.at(chainIndex);
             _updateAllDirty(getDevice(), set, chainLink.binding, bindingInfo<idTexture2D>().images, chainLink.dirty);
@@ -739,6 +750,7 @@ public:
         auto dset = m_dsetChain[ getCurrentChain() ];
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, set, 1, &dset, 0, nullptr);
     }
+    //===================================================================================================
 
     size_t getCurrentChain() const
     {
@@ -883,7 +895,8 @@ protected:
         }
 
 
-        allocateTexture({16,16}, VK_FORMAT_R8G8B8A8_UNORM, 1);
+        // always allocate a "null" texture
+        allocateTexture({8,8}, VK_FORMAT_R8G8B8A8_UNORM, 1);
         allocateTextureCube(8, VK_FORMAT_R8G8B8A8_UNORM, 1);
 
         for(size_t i=0;i<total2DTextures;i++)
@@ -901,15 +914,13 @@ protected:
         auto w = extent.width;
         auto h = std::max(w,extent.height);
         auto d = std::max(h,extent.depth);
-        uint32_t mipLevels = 1 + static_cast<uint32_t>(std::floor(std::log2(d)));
-        return mipLevels;
+        return calculateMipMaps(d);
     }
     static uint32_t calculateMipMaps(VkExtent2D extent)
     {
         auto w = extent.width;
         auto h = std::max(w,extent.height);
-        uint32_t mipLevels = 1 + static_cast<uint32_t>(std::floor(std::log2(h)));
-        return mipLevels;
+        return calculateMipMaps(h);
     }
     static uint32_t calculateMipMaps(uint32_t extent)
     {
@@ -1118,16 +1129,17 @@ protected:
 
     void destroyImage(ImageInfo & I)
     {
-        vkDestroyImageView(getDevice(), I.imageView, nullptr);
-
-        vkDestroySampler(getDevice(), I.sampler.linear, nullptr);
+        vkDestroySampler(getDevice(), I.sampler.linear,  nullptr);
         vkDestroySampler(getDevice(), I.sampler.nearest, nullptr);
 
-        I.sampler.linear = I.sampler.nearest = VK_NULL_HANDLE;
+        vkDestroyImageView(getDevice(), I.imageView, nullptr);
+
         vmaDestroyImage(getAllocator(), I.image, I.allocation);
+
         I.allocation = nullptr;
         I.image      = VK_NULL_HANDLE;
         I.imageView  = VK_NULL_HANDLE;
+        I.sampler.linear = I.sampler.nearest = VK_NULL_HANDLE;
     }
 
     template<typename callable_t>

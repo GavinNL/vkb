@@ -186,12 +186,12 @@ public:
         frame.beginRenderPass( frame.commandBuffer );
 
         VkViewport vp = {};
-        vp.x = 0.0f;
-        vp.y = 0.0f;
-        vp.width  = (float)swapchainImageSize().width;
-        vp.height = (float)swapchainImageSize().height;
-        vp.minDepth = 0.0f;
-        vp.maxDepth = 1.0f;
+        vp.x          = 0.0f;
+        vp.y          = 0.0f;
+        vp.width      = ( float ) swapchainImageSize().width;
+        vp.height     = ( float ) swapchainImageSize().height;
+        vp.minDepth   = 0.0f;
+        vp.maxDepth   = 1.0f;
 
         VkRect2D sc = {};
         sc.extent = swapchainImageSize();
@@ -201,17 +201,18 @@ public:
         // You should call update once per frame
         // to ensure that all descriptors are updated
         // appropriately
+        m_TManager.nextChain();
         m_TManager.update();
 
         // Bind the texture manager to set 0
         m_TManager.bind(frame.commandBuffer, 0, m_pipeline.layout);
 
-        m_TManager.nextChain();
+
 
         struct pushC
         {
-            int32_t texture0 = 0;
-            int32_t texture1 = 1;
+            int32_t texture0 = 1;
+            int32_t texture1 = 2;
         };
 
         {
