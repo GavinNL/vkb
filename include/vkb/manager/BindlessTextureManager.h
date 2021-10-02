@@ -728,18 +728,15 @@ public:
             auto & chainLink = bindingInfo<idTextureCube>().arrayInfo.at(chainIndex);
             _updateAllDirty(getDevice(), set, chainLink.binding, bindingInfo<idTextureCube>().images, chainLink.dirty);
         }
-
-        m_dChain[ getCurrentChain() ].update(getDevice(),      m_image2D.images);
-        m_dChain[ getCurrentChain() ].updateCubes(getDevice(), m_imageCube.images);
     }
 
     void nextChain()
     {
-        m_currentChain = (m_currentChain+1) % m_dChain.size();
+        m_currentChain = (m_currentChain+1) % m_dsetChain.size();
     }
     void bind(VkCommandBuffer cmd, uint32_t set, VkPipelineLayout layout)
     {
-        auto dset = m_dChain[ getCurrentChain() ].m_descriptorSet;
+        auto dset = m_dsetChain[ getCurrentChain() ];
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, set, 1, &dset, 0, nullptr);
     }
 
@@ -755,17 +752,6 @@ public:
         for(auto & x : bindingInfo<textureId_type>().arrayInfo)
         {
             x.dirty.push_back( static_cast<size_t>(id.index) );
-        }
-        for(auto & x : m_dChain)
-        {
-            if constexpr ( std::is_same_v<textureId_type, idTexture2D >)
-            {
-                x.m_dirtyImage2D.push_back(id.index);
-            }
-            if constexpr ( std::is_same_v<textureId_type, idTextureCube >)
-            {
-                x.m_dirtyImageCube.push_back(id.index);
-            }
         }
     }
 
@@ -873,8 +859,6 @@ protected:
 
         size_t maxDescriptorChain = 5;
 
-        bindingInfo<idTexture2D>().arrayInfo.resize(maxDescriptorChain);
-        bindingInfo<idTextureCube>().arrayInfo.resize(maxDescriptorChain);
         //==================
         for(size_t i=0;i<maxDescriptorChain;i++)
         {
@@ -887,14 +871,12 @@ protected:
             VkDescriptorSet dSet;
             VK_CHECK_RESULT(vkAllocateDescriptorSets(getDevice(), &allocInfo, &dSet));
 
-            m_dChain.emplace_back().m_descriptorSet = dSet;
-
             {
                 auto & dArrayInfo = bindingInfo<idTexture2D>().arrayInfo.emplace_back();
                 dArrayInfo.binding = idTexture2D::binding;
             }
             {
-                auto & dArrayInfo = bindingInfo<idTexture2D>().arrayInfo.emplace_back();
+                auto & dArrayInfo = bindingInfo<idTextureCube>().arrayInfo.emplace_back();
                 dArrayInfo.binding = idTextureCube::binding;
             }
             m_dsetChain.push_back(dSet);
@@ -1356,6 +1338,7 @@ protected:
     };
 
     //===================================================
+    size_t                       m_currentChain = 0;
     std::vector<VkDescriptorSet> m_dsetChain;
     bindingInfo                  m_image2D;
     bindingInfo                  m_imageCube;
@@ -1446,10 +1429,8 @@ protected:
         m_dirty.clear();
     }
 
-    std::vector<DescriptorChain> m_dChain;
     CreateInfo                   m_createInfo;
     bool                         m_selfManagedAllocator = false;
-    size_t                       m_currentChain         = 0;
 };
 
 }
