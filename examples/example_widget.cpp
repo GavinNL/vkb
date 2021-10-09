@@ -97,12 +97,12 @@ public:
         // images
         //=======================================================
         vkb::BindlessTextureManager::CreateInfo Ci;
-        Ci.instance       = getInstance();
-        Ci.physicalDevice = getPhysicalDevice();
-        Ci.device         = getDevice();
-        Ci.allocator      = nullptr;// create it for us
-        Ci.graphicsQueue  = getGraphicsQueue();
-        Ci.totalTexture2D = 1024;
+        Ci.instance         = getInstance();
+        Ci.physicalDevice   = getPhysicalDevice();
+        Ci.device           = getDevice();
+        Ci.allocator        = nullptr;// create it for us
+        Ci.graphicsQueue    = getGraphicsQueue();
+        Ci.totalTexture2D   = 1024;
         Ci.totalTextureCube = 1024;
 
         Ci.allocator = nullptr; // have the texture manager create
@@ -220,10 +220,32 @@ public:
             jj++;
 
             static pushC p = pushC();
-            if( jj > 100)
+            if( jj > 50)
             {
+
+                {
+                    gul::Image img(1024,1024);
+
+                    img.r = rand()%255;
+                    img.g = rand()%255;
+                    img.b = rand()%255;
+                    img.a = 255;
+
+                    auto id = m_TManager.allocateTexture(img);
+                    assert(id.index != -1);
+                    std::cout << "Allocated index: " << id.index << std::endl;
+
+                    p.texture0 = id.index;
+
+                    if( id.index > 10)
+                    {
+                        m_TManager.freeTexture( id );
+                    }
+                   // id.index--;
+                }
+
                 jj = 0;
-                std::swap(p.texture0,p.texture1);
+               // std::swap(p.texture0,p.texture1);
             }
 
             vkCmdPushConstants(frame.commandBuffer, m_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0, sizeof(pushC), &p);
