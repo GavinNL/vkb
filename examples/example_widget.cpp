@@ -97,12 +97,13 @@ public:
         // images
         //=======================================================
         vkb::BindlessTextureManager::CreateInfo Ci;
-        Ci.instance       = getInstance();
-        Ci.physicalDevice = getPhysicalDevice();
-        Ci.device         = getDevice();
-        Ci.allocator      = nullptr;// create it for us
-        Ci.graphicsQueue  = getGraphicsQueue();
-        Ci.totalTexture2D = 1024;
+        Ci.instance         = getInstance();
+        Ci.physicalDevice   = getPhysicalDevice();
+        Ci.device           = getDevice();
+        Ci.allocator        = nullptr;// create it for us
+        Ci.graphicsQueue    = getGraphicsQueue();
+        Ci.totalTexture2D   = 1024;
+        Ci.totalTextureCube = 1024;
 
         Ci.allocator = nullptr; // have the texture manager create
                                 // the vma Allocator for us.
@@ -122,6 +123,13 @@ public:
             img.r = 0;
             img.g = 255;
             auto id = m_TManager.allocateTexture(img);
+            assert(id.index != -1);
+        }
+
+        {
+            auto id = m_TManager.allocateTextureCube(1024);
+            m_TManager.uploadImageData(id,img);
+            m_TManager.generateMipMaps(id,0,99999);
             assert(id.index != -1);
         }
         std::cout << "initResources() " << std::endl;
@@ -178,12 +186,12 @@ public:
         frame.beginRenderPass( frame.commandBuffer );
 
         VkViewport vp = {};
-        vp.x = 0.0f;
-        vp.y = 0.0f;
-        vp.width  = (float)swapchainImageSize().width;
-        vp.height = (float)swapchainImageSize().height;
-        vp.minDepth = 0.0f;
-        vp.maxDepth = 1.0f;
+        vp.x          = 0.0f;
+        vp.y          = 0.0f;
+        vp.width      = ( float ) swapchainImageSize().width;
+        vp.height     = ( float ) swapchainImageSize().height;
+        vp.minDepth   = 0.0f;
+        vp.maxDepth   = 1.0f;
 
         VkRect2D sc = {};
         sc.extent = swapchainImageSize();
@@ -193,17 +201,18 @@ public:
         // You should call update once per frame
         // to ensure that all descriptors are updated
         // appropriately
+        m_TManager.nextChain();
         m_TManager.update();
 
         // Bind the texture manager to set 0
         m_TManager.bind(frame.commandBuffer, 0, m_pipeline.layout);
 
-        m_TManager.nextChain();
+
 
         struct pushC
         {
-            int32_t texture0 = 0;
-            int32_t texture1 = 1;
+            int32_t texture0 = 1;
+            int32_t texture1 = 2;
         };
 
         {
@@ -211,13 +220,41 @@ public:
             jj++;
 
             static pushC p = pushC();
-            if( jj > 100)
+            if( jj > 50)
             {
+
+                {
+                    gul::Image img(1024,1024);
+
+                    img.r = rand()%255;
+                    img.g = rand()%255;
+                    img.b = rand()%255;
+                    img.a = 255;
+
+                    auto id = m_TManager.allocateTexture(img);
+                    assert(id.index != -1);
+                    std::cout << "Allocated index: " << id.index << std::endl;
+
+                    p.texture0 = id.index;
+
+                    if( id.index > 10)
+                    {
+                        m_TManager.freeTexture( id );
+                    }
+                   // id.index--;
+                }
+
                 jj = 0;
-                std::swap(p.texture0,p.texture1);
+               // std::swap(p.texture0,p.texture1);
             }
 
             vkCmdPushConstants(frame.commandBuffer, m_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0, sizeof(pushC), &p);
+        }
+
+        {
+            //PFN_vkCreateDebugUtilsMessengerEXT myvkCreateDebugUtilsMessengerEXT = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>( vkGetInstanceProcAddr( instance, "vkCreateDebugUtilsMessengerEXT" ) );
+            PFN_vkCmdSetVertexInputEXT func = reinterpret_cast<PFN_vkCmdSetVertexInputEXT>( vkGetInstanceProcAddr( getInstance(), "vkCmdSetVertexInputEXT" ) );
+            func(frame.commandBuffer, 0, nullptr, 0, nullptr);
         }
         vkCmdBindPipeline(frame.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline.pipeline);
 
@@ -242,7 +279,13 @@ public:
         ci.fragmentShader = createShaderModule(CMAKE_SOURCE_DIR "/share/shaders/BindLessTexture.frag.spv");
 
         ci.dynamicStates = {VK_DYNAMIC_STATE_SCISSOR,
-                           VK_DYNAMIC_STATE_VIEWPORT};
+                           VK_DYNAMIC_STATE_VIEWPORT,
+                           VK_DYNAMIC_STATE_VERTEX_INPUT_EXT
+                           };
+
+        ci.outputTargetCount = 1; // writing to only one output target.
+                                  // this needs to match the renderpass
+
         {
             VkPipelineLayoutCreateInfo lci = {};
 
@@ -266,6 +309,9 @@ public:
         pp.shaders.push_back(ci.fragmentShader);
         pp.pipeline = ci.create([&](auto & info)
         {
+            // we can modify the values in info if you need
+            // more control
+
             VkPipeline pipeline;
             if (vkCreateGraphicsPipelines(getDevice(), VK_NULL_HANDLE, 1, &info, nullptr, &pipeline) != VK_SUCCESS) {
                 throw std::runtime_error("failed to create graphics pipeline!");
@@ -381,17 +427,19 @@ int main(int argc, char *argv[])
 //    c.surfaceInfo.depthFormat    = VK_FORMAT_D32_SFLOAT_S8_UINT;
     c.instanceInfo.debugCallback = &VulkanReportFunc;
 
+    c.instanceInfo.enabledLayers     = { "VK_LAYER_KHRONOS_validation"};
+    c.instanceInfo.enabledExtensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+
     c.deviceInfo.deviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
     c.deviceInfo.deviceExtensions.push_back(VK_EXT_TRANSFORM_FEEDBACK_EXTENSION_NAME);
+    c.deviceInfo.deviceExtensions.push_back(VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME);
+    c.deviceInfo.deviceExtensions.push_back(VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
 
     // enable a new extended feature
-    //VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT dynamicVertexState = {};
-    //dynamicVertexState.sType                    = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT;
-    //dynamicVertexState.vertexInputDynamicState  = true;
-    //c.deviceInfo.enabledFeatures12.pNext         = &dynamicVertexState;
-
-    // create the window and initialize
-    //vulkanWindow.create(c);
+    VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT dynamicVertexState = {};
+    dynamicVertexState.sType                   = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT;
+    dynamicVertexState.vertexInputDynamicState = true;
+    c.deviceInfo.enabledFeatures12.pNext       = &dynamicVertexState;
 
     // Here is the actual vulkan application that does
     // all the rendering.

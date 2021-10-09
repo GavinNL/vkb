@@ -91,7 +91,7 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
 
     tManager.uploadImageData(id, img);
 
-    tManager.generateMipMaps(id);
+    tManager.generateMipMaps(id,0,1);
 
     auto id2 = tManager.allocateTexture(img);
     // frame 1

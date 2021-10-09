@@ -12,6 +12,7 @@
 #include <variant>
 #include <cstring>
 #include <algorithm>
+#include <unordered_set>
 #include <vk_mem_alloc.h>
 
 namespace vkb
@@ -39,18 +40,23 @@ namespace vkb
 }
 #endif
 
-struct idTexture2D
+/**
+ * @brief The idTexture_t struct
+ *
+ * This is a wrapper around an index
+ * into the array-of-textures in the shaders.
+ *
+ */
+template<uint32_t _binding>
+struct idTexture_t
 {
+    static constexpr auto binding = _binding;
     int32_t index = -1;
 };
-struct idTexture2DArray
-{
-    int32_t index = -1;
-};
-struct idTextureCube
-{
-    int32_t index = -1;
-};
+
+using idTexture2D      = idTexture_t<0>;
+using idTextureCube    = idTexture_t<1>;
+using idTexture2DArray = idTexture_t<2>;
 
 template<typename Img_t>
 struct ImgQuery;
@@ -70,70 +76,6 @@ struct ImageInfo
         VkSampler nearest;
     } sampler;
 };
-
-struct DescriptorChain
-{
-    VkDescriptorSet     m_descriptorSet;
-    std::vector<size_t> m_dirtyImage2D;
-
-
-    void update(VkDevice device, std::vector<ImageInfo> const & images)
-    {
-        update(device, images, m_dirtyImage2D);
-    }
-protected:
-    void update(VkDevice device, std::vector<ImageInfo> const & images, std::vector<size_t> & m_dirty)
-    {
-        std::vector<VkWriteDescriptorSet> writes;
-        std::vector<VkDescriptorImageInfo> imageInfos;
-        writes.reserve(m_dirty.size());
-        imageInfos.reserve(m_dirty.size());
-
-        std::sort(m_dirty.begin(), m_dirty.end());
-        m_dirty.erase( std::unique( m_dirty.begin(), m_dirty.end()), m_dirty.end());
-
-
-        for(auto j : m_dirty)
-        {
-            auto & b = writes.emplace_back();
-            b.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            b.dstArrayElement = static_cast<uint32_t>(j);
-            b.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            b.dstBinding      = 0;
-            b.dstSet          = m_descriptorSet;
-
-            auto &img         = imageInfos.emplace_back();
-            {
-                auto i = std::min( images.size()-1, j);
-
-                // if the image doesn't exist, (ie: it has been destroyed)
-                // then use the first image in the array instead.
-                // this is usually the "null image"
-                if( images[i].image == VK_NULL_HANDLE)
-                {
-                    i = 0;
-                }
-
-                assert( images[i].image != VK_NULL_HANDLE );
-
-                img.imageLayout   = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                img.imageView     = images[i].imageView;
-                img.sampler       = images[i].sampler.linear;
-            }
-
-            b.pImageInfo      = &img;
-            b.descriptorCount = 1;
-        }
-        if( m_dirty.size() != 0)
-        {
-            std::cerr << "Updating: " << m_descriptorSet << ": " << m_dirty.size() << " descriptors" << std::endl;
-        }
-
-        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
-        m_dirty.clear();
-    }
-};
-
 
 /**
  * @brief The BindlessTextureManager class
@@ -162,6 +104,26 @@ protected:
  * a new image and memory.
  *
  *
+ * You should use the textures in your shader like this:
+ *
+ * //========================================================================
+ * // Bindless Texture
+ * //========================================================================
+ * layout (set = 0, binding = 0) uniform sampler2D    u_TextureArray[1024];
+ * layout (set = 0, binding = 1) uniform samplerCube  u_TextureCubeArray[1024];
+ *
+ *
+ * vec4 bindlessTexture(int index, vec2 fragTexCoord)
+ * {
+ *     return texture( u_TextureArray[ clamp(index, 0, 1023) ], fragTexCoord);
+ * }
+ * vec4 bindlessTextureCube(int index, vec3 fragTexCoord)
+ * {
+ *     return texture( u_TextureCubeArray[ clamp(index, 0, 1023) ], fragTexCoord);
+ * }
+ *
+ * //========================================================================
+ *
  */
 class BindlessTextureManager
 {
@@ -178,7 +140,7 @@ public:
         VkShaderStageFlags stageFlags   = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         //
         uint32_t totalTexture2D   = 16;
-        uint32_t totalTextureCube = 0;
+        uint32_t totalTextureCube = 16;
     };
 
     using _buffer = std::pair<VkBuffer, VmaAllocation>;
@@ -192,6 +154,9 @@ public:
      */
     bool create(CreateInfo const & C)
     {
+        static_assert (sizeof(idTexture_t<0>)==sizeof(uint32_t),"");
+        static_assert (sizeof(idTexture_t<1>)==sizeof(uint32_t),"");
+        static_assert (sizeof(idTexture_t<2>)==sizeof(uint32_t),"");
         m_createInfo = C;
         if( m_createInfo.allocator == nullptr)
         {
@@ -257,6 +222,34 @@ public:
     //=========================================================================================================================
     // Simple Texture Management
     //=========================================================================================================================
+    // How it works:
+    //
+    //   The BindlessTextureManager manges a multiple array-of-textures,
+    //   one for each type of texture: texture2D, textureCube, etc
+    //
+    //   When you call allocateTexture( ), it will create a texture
+    //   and place it into one of the available slots in the array-of-textures
+    //   you can then use that texture right away in your shader my indexing into
+    //   the array of textures.
+    //
+    //   When you free the texture, it does not destroy the data. It will mark the
+    //   image index as "free". You can still continue to index into that array
+    //   index.
+    //
+    //   When you call allocateTexture() again, it will seach for a "free" image with
+    //   the same dimensions and format to use and return that index instead.
+    //   You can then use that index to copy new image data over.
+    //
+    //   If it cannot find a free image, it will allocate a new image if there is
+    //   available indices left int he array-of-textures. If there are no more indices
+    //   it will destroy any free images currently available to make room.
+    //
+    //   When you call allocateTexture, it returns an idTextureXXXXX. This is
+    //   simply a wrapper around an index into the array-of-textures
+    //   You can copy this index into your user usring PUSH CONSTANTS so that you
+    //   know how to index into the array-of-textures
+    //=========================================================================================================================
+
     /**
      * @brief allocateTexture
      * @param extent
@@ -265,47 +258,47 @@ public:
      *
      * Allocate a texture in the manager.
      */
-    idTexture2D allocateTexture(VkExtent2D extent,
-                                VkFormat format = VK_FORMAT_R8G8B8A8_UNORM,
-                                uint32_t mipMaps = 0)
+    template<typename idType>
+    idType _findAvailable(VkFormat format, VkExtent3D extent, uint32_t arrayLayers, uint32_t mipMaps)
     {
-        int32_t j=0;
+        auto &images = bindingInfo<idType>().images;
+        auto &free   = bindingInfo<idType>().free;
 
-        auto &images = m_image2D.images;
-        auto &free   = m_image2D.free;
-        // Loop through all the free images.
-        // These are images which were no longer needed, but are still
-        // allocated. They can be reused.
-        // So find one that fits the dimensions/format/etc
-        // and return that one. none exist, then
-        // we will have to create a new texture
-        for(auto & i : free)
+        for(auto  i : free)
         {
             auto & info = images[i].info;
-            if( info.extent.width == extent.width &&
+            if( info.extent.width  == extent.width &&
                 info.extent.height == extent.height &&
-                info.extent.depth == 1 &&
-                info.arrayLayers == 1 &&
-                info.format == format)
+                info.extent.depth  == extent.depth  &&
+                info.arrayLayers   == arrayLayers &&
+                info.mipLevels     == mipMaps &&
+                info.format        == format)
             {
-                return {j};
+                free.erase(i);
+                return { static_cast<int32_t>(i) };
             }
-            ++j;
         }
-        auto img = image_Create(extent.width,extent.height,1, format, VK_IMAGE_VIEW_TYPE_2D, 1, mipMaps, {});
-        images.push_back(img);
+        return {-1};
+    }
 
-        idTexture2D id{ static_cast<int32_t>(images.size()-1) };
-        _beginCommandBuffer([=](auto cmd)
-        {
-            _transitionLayout(cmd, getImage(id),
-                              VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                              0, getLayerCount(id),
-                              0  , getMipmapCount(id));
-        });
+    idTexture2D allocateTexture(VkExtent2D extent,
+                                VkFormat format = VK_FORMAT_R8G8B8A8_UNORM,
+                                uint32_t mipMaps = 99999)
+    {
+        auto ext3d        = VkExtent3D{extent.width, extent.height, 1};
+        mipMaps           = std::clamp<uint32_t>(mipMaps, 1, calculateMipMaps(extent));
 
-        setDirty(images.size()-1);
-        return id;
+        return _allocateTexture<idTexture2D>(ext3d, format, 1, mipMaps, VK_IMAGE_VIEW_TYPE_2D);
+    }
+
+    idTextureCube allocateTextureCube(uint32_t cubeLength,
+                                      VkFormat format = VK_FORMAT_R8G8B8A8_UNORM,
+                                      uint32_t mipMaps = 99999)
+    {
+        auto ext3d        = VkExtent3D{cubeLength, cubeLength, 1};
+        mipMaps           = std::clamp<uint32_t>(mipMaps, 1, calculateMipMaps(cubeLength));
+
+        return _allocateTexture<idTextureCube>(ext3d, format, 6, mipMaps, VK_IMAGE_VIEW_TYPE_CUBE);
     }
 
     //=========================================================================================================================
@@ -318,16 +311,34 @@ public:
      * allocate a texturte, it will reuse the same one if the dimensions
      * are the same.
      */
-    void freeTexture(idTexture2D id)
+    template<typename idType>
+    void freeTexture( idType id)
     {
+        assert( static_cast<size_t>(id.index) < bindingInfo<idType>().images.size() );
         auto i = static_cast<size_t>(id.index);
-        m_image2D.free.push_back(i);
+        bindingInfo<idType>().free.insert(i);
     }
-    void freeTexture(idTextureCube id)
+    //=========================================================================================================================
+
+
+    //=========================================================================================================================
+    /**
+     * @brief destroyTexture
+     * @param id
+     *
+     * Destroys the texture. This will free the memory and
+     * destroy the vulkan handle. The texture in the
+     * array-of-textures will replaced by the
+     * null texture.
+     */
+    template<typename idType>
+    void destroyTexture(idType id)
     {
-        auto i = static_cast<size_t>(id.index);
-        m_imageCube.free.push_back(i);
+        if( id.index == 0)
+        destroyImage( bindingInfo<idType>().images[static_cast<uint32_t>(id.index)] );
+        setDirty(id);
     }
+    //=========================================================================================================================
     /**
      * @brief allocateTexture
      * @param img
@@ -383,14 +394,14 @@ public:
     {
         std::string out;
         out += "layout (set = " + std::to_string(setNumber) + ", binding = 0) uniform sampler2D   u_TextureArray[    " + std::to_string(m_createInfo.totalTexture2D) + "];  \n";
-        //out += "layout (set = " + std::to_string(setNumber) + ", binding = 1) uniform samplerCube u_TextureCubeArray[" + std::to_string(m_createInfo.totalTexture2D) + "];  ";
+        out += "layout (set = " + std::to_string(setNumber) + ", binding = 1) uniform samplerCube u_TextureCubeArray[" + std::to_string(m_createInfo.totalTextureCube) + "];  ";
         return out;
     }
 
 
 
-    template<typename Img_t>
-    void uploadImageData( idTexture2D dstId,
+    template<typename imageId_type, typename Img_t>
+    void uploadImageData( imageId_type dstId,
                           Img_t const & img,
                           VkRect2D dstRect = { {0,0}, {0,0}},
                           uint32_t dstLayer = 0,
@@ -428,7 +439,8 @@ public:
      * copied into.
      *
      */
-    void uploadImageData( idTexture2D dstId,
+    template<typename textureIDType>
+    void uploadImageData( textureIDType dstId,
                           void const * srcData,
                           uint32_t     srcByteSize,
                           VkExtent2D   srcExtent,
@@ -439,25 +451,26 @@ public:
     {
         auto stg = _allocateStagingBuffer(srcData, srcByteSize);
 
-        auto & m_images = m_image2D.images;
+        auto image = getImage(dstId);
+        auto extent = getExtent(dstId);
 
         _beginCommandBuffer([=](auto cmd)
         {
-            _transitionLayout(cmd, m_images[dstId.index].image,
+            _transitionLayout(cmd, image,
                               VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                               dstLayer, 1,
                               dstMip  , 1);
 
             VkExtent3D _extent;
             _extent.depth  = 1;
-            _extent.width  = std::min(m_images[dstId.index].info.extent.width  - dstRect.offset.x, dstRect.extent.width);
-            _extent.height = std::min(m_images[dstId.index].info.extent.height - dstRect.offset.y, dstRect.extent.height);
+            _extent.width  = std::min(extent.width  - dstRect.offset.x, dstRect.extent.width);
+            _extent.height = std::min(extent.height - dstRect.offset.y, dstRect.extent.height);
 
             VkOffset3D _offset{ dstRect.offset.x, dstRect.offset.y, 0};
 
             _copyBufferToImage(cmd, stg, srcExtent.width,srcExtent.height, dstId, _offset, _extent, dstLayer, dstMip);
 
-            _transitionLayout(cmd, m_images[dstId.index].image,
+            _transitionLayout(cmd, image,
                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                               dstLayer, 1,
                               dstMip  , 1);
@@ -474,21 +487,24 @@ public:
      * Generate mipmaps for an image. This will generate the mipmaps by
      * bliting Mip:0 to all the smaller mips
      */
-    void generateMipMaps(idTexture2D id,
+    template<typename textureId_type>
+    void generateMipMaps(textureId_type id,
                          uint32_t baseArrayLayer, uint32_t layerCount,
                          VkImageLayout mip0InitialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
     {
         VkFilter filter = VK_FILTER_LINEAR;
 
+        auto maxLayers = getLayerCount(id);
+        layerCount = std::min(maxLayers-baseArrayLayer, layerCount);
         VkImageBlit region;
         region.srcSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
         region.srcSubresource.baseArrayLayer = baseArrayLayer;
-        region.srcSubresource.layerCount     = std::min(layerCount-baseArrayLayer, layerCount);
+        region.srcSubresource.layerCount     = layerCount;
         region.srcSubresource.mipLevel       = 0;
 
         region.dstSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
         region.dstSubresource.baseArrayLayer = baseArrayLayer;
-        region.dstSubresource.layerCount     = std::min(layerCount-baseArrayLayer, layerCount);;
+        region.dstSubresource.layerCount     = layerCount;
         region.dstSubresource.mipLevel       = 0;
 
         region.srcOffsets[0] = {0,0,0};
@@ -510,7 +526,7 @@ public:
                                     image,
                                     mip0InitialLayout,
                                     VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                    0, 1,
+                                    baseArrayLayer, layerCount,
                                     0, 1);
 
             for(uint32_t i=1;i<maxMip;i++)
@@ -531,7 +547,7 @@ public:
                                         image,
                                         VK_IMAGE_LAYOUT_UNDEFINED,
                                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                                        0, 1,
+                                        baseArrayLayer, layerCount,
                                         i, 1);
 
                 // convert layer i-1 into transfer src
@@ -542,7 +558,7 @@ public:
                                         image,
                                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                                         VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-                                        0, 1,
+                                        baseArrayLayer, layerCount,
                                         i, 1);
             }
 
@@ -550,35 +566,23 @@ public:
                                     image,
                                     VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                     VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                                    0, 1,
+                                    baseArrayLayer, layerCount,
                                     0, maxMip);
         });
 
     }
 
+
+
     template<typename idType>
     ImageInfo & info(idType id)
     {
-        if constexpr ( std::is_same_v<idType, idTexture2D >)
-        {
-            return m_image2D.images.at(id.index);
-        }
-        if constexpr ( std::is_same_v<idType, idTextureCube >)
-        {
-            return m_imageCube.images.at(id.index);
-        }
+        return bindingInfo<idType>().images.at(static_cast<size_t>(id.index) );
     }
     template<typename idType>
     ImageInfo const & info(idType id) const
     {
-        if constexpr ( std::is_same_v<idType, idTexture2D >)
-        {
-            return m_image2D.images.at(id.index);
-        }
-        if constexpr ( std::is_same_v<idType, idTextureCube >)
-        {
-            return m_imageCube.images.at(id.index);
-        }
+        return bindingInfo<idType>().images.at( static_cast<size_t>(id.index) );
     }
 
     template<typename idType>
@@ -615,6 +619,38 @@ public:
 
 
 
+    //===================================================================================================
+    // Texture Manager Usage:
+    //
+    // To use the texture manager during your render loop:
+    // at the start of the frame you should call:
+    //
+    //      TextureManager::nextChain();
+    //      TextureManager::update();
+    //
+    // This updates all images that have been flaged as dirty and performs
+    // a descriptorWrite on all of them.
+    //
+    //
+    //
+    // For each graphics pipeline that wants to use the textures
+    // you should make sure you create your pipeline layout
+    // with the descriptor set layout managed by the TextureManager
+    //
+    //  TextureManager::getDescriptorSetLayout()
+    //
+    // The texture manger's textures should all be used on a single set
+    // set 0 is probably the easest one to use.
+    //  VkPipelineLayoutCreateInfo ci = {};
+    //  ci.pSetLayouts = {  TextureManager::getDescriptorSetLayout(),
+    //                      // your other set layouts };
+    //
+    //
+    // Then when you bind the pipeline, you should also bind the texture
+    // manager:
+    //
+    //   TextureManager::bind(commandBuffer, 0, pipelineLayout);
+    //===================================================================================================
     /**
      * @brief update
      *
@@ -628,18 +664,35 @@ public:
         {
             throw std::runtime_error("Cannot update images. Need to allocate at least 1 image");
         }
-        m_dChain[ getCurrentChain() ].update(getDevice(), m_image2D.images);
+        auto   chainIndex = getCurrentChain();
+        auto   set        = m_dsetChain.at(chainIndex);
+
+        // at this point, _updateAllDirty will go through all
+        // the indices in chainLink.dirty, and perform
+        // a descriptor write on those indices.
+        // if the VkImage for that array index
+        // is a null handle (ie: it has been destroyed)
+        // then it will use the VkImage in index[ 0 ]
+        {
+            auto & chainLink = bindingInfo<idTexture2D>().arrayInfo.at(chainIndex);
+            _updateAllDirty(getDevice(), set, chainLink.binding, bindingInfo<idTexture2D>().images, chainLink.dirty);
+        }
+        {
+            auto & chainLink = bindingInfo<idTextureCube>().arrayInfo.at(chainIndex);
+            _updateAllDirty(getDevice(), set, chainLink.binding, bindingInfo<idTextureCube>().images, chainLink.dirty);
+        }
     }
 
     void nextChain()
     {
-        m_currentChain = (m_currentChain+1) % m_dChain.size();
+        m_currentChain = (m_currentChain+1) % m_dsetChain.size();
     }
     void bind(VkCommandBuffer cmd, uint32_t set, VkPipelineLayout layout)
     {
-        auto dset = m_dChain[ getCurrentChain() ].m_descriptorSet;
+        auto dset = m_dsetChain[ getCurrentChain() ];
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, set, 1, &dset, 0, nullptr);
     }
+    //===================================================================================================
 
     size_t getCurrentChain() const
     {
@@ -647,15 +700,14 @@ public:
     }
 
 
-    void setDirty(size_t index)
+    template<typename textureId_type>
+    void setDirty(textureId_type id)
     {
-        for(auto & x : m_dChain)
+        for(auto & x : bindingInfo<textureId_type>().arrayInfo)
         {
-            x.m_dirtyImage2D.push_back(index);
+            x.dirty.push_back( static_cast<size_t>(id.index) );
         }
     }
-
-
 
 
     void copyImageData(void const * pixelData, size_t byteSize,
@@ -759,8 +811,10 @@ protected:
 
         VK_CHECK_RESULT( vkCreateDescriptorPool(getDevice(), &poolCI, nullptr, &m_descriptorPool) );
 
+        size_t maxDescriptorChain = 5;
+
         //==================
-        for(size_t i=0;i<5;i++)
+        for(size_t i=0;i<maxDescriptorChain;i++)
         {
             VkDescriptorSetAllocateInfo allocInfo = {};
             allocInfo.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -771,38 +825,46 @@ protected:
             VkDescriptorSet dSet;
             VK_CHECK_RESULT(vkAllocateDescriptorSets(getDevice(), &allocInfo, &dSet));
 
-            m_dChain.emplace_back().m_descriptorSet = dSet;
+            {
+                auto & dArrayInfo = bindingInfo<idTexture2D>().arrayInfo.emplace_back();
+                dArrayInfo.binding = idTexture2D::binding;
+            }
+            {
+                auto & dArrayInfo = bindingInfo<idTextureCube>().arrayInfo.emplace_back();
+                dArrayInfo.binding = idTextureCube::binding;
+            }
+            m_dsetChain.push_back(dSet);
         }
 
-        allocateTexture({16,16}, VK_FORMAT_R8G8B8A8_UNORM, 0);
+
+        // always allocate a "null" texture
+        allocateTexture({8,8}, VK_FORMAT_R8G8B8A8_UNORM, 1);
+        allocateTextureCube(8, VK_FORMAT_R8G8B8A8_UNORM, 1);
+
         for(size_t i=0;i<total2DTextures;i++)
         {
-            setDirty(i);
+            setDirty(idTexture2D{static_cast<int32_t>(i)});
+        }
+        for(size_t i=0;i<totalTextureCube;i++)
+        {
+            setDirty(idTextureCube{static_cast<int32_t>(i)});
         }
     }
 
     static uint32_t calculateMipMaps(VkExtent3D extent)
     {
-        auto w = extent.width;
-        auto h = std::max(w,extent.height);
-        auto d = std::max(h,extent.depth);
-        uint32_t mipLevels = 1 + static_cast<uint32_t>(std::floor(std::log2(d)));
-        return mipLevels;
+        return calculateMipMaps( std::min( std::min( extent.width, extent.height), extent.depth ) );
     }
     static uint32_t calculateMipMaps(VkExtent2D extent)
     {
-        auto w = extent.width;
-        auto h = std::max(w,extent.height);
-        uint32_t mipLevels = 1 + static_cast<uint32_t>(std::floor(std::log2(h)));
-        return mipLevels;
+        return calculateMipMaps( std::min( extent.width, extent.height) );
     }
-    static uint32_t calculateMipMaps(uint32_t extent)
+    static uint32_t calculateMipMaps(uint32_t w)
     {
-        auto w = extent;
         return  1 + static_cast<uint32_t>(std::floor(std::log2(w)));
     }
 
-    ImageInfo  image_Create( uint32_t width, uint32_t height, uint32_t depth
+    ImageInfo  image_Create(  VkExtent3D extent
                              ,VkFormat format
                              ,VkImageViewType viewType
                              ,uint32_t arrayLayers
@@ -813,9 +875,9 @@ protected:
         VkImageCreateInfo imageInfo{};
 
         imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        imageInfo.imageType     = depth==1 ? VK_IMAGE_TYPE_2D : VK_IMAGE_TYPE_3D;
+        imageInfo.imageType     = extent.depth==1 ? VK_IMAGE_TYPE_2D : VK_IMAGE_TYPE_3D;
         imageInfo.format        = format;
-        imageInfo.extent        = VkExtent3D{width, height, depth};
+        imageInfo.extent        = extent;
         imageInfo.mipLevels     = miplevels;
         imageInfo.arrayLayers   = arrayLayers;
 
@@ -825,11 +887,11 @@ protected:
         imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;// vk::SharingMode::eExclusive;
         imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;// vk::ImageLayout::eUndefined;
 
-        if( imageInfo.mipLevels == 0)
-        {
-            imageInfo.mipLevels = calculateMipMaps( VkExtent2D{width, height});
-            miplevels = imageInfo.mipLevels;
-        }
+        //if( imageInfo.mipLevels == 0)
+        //{
+        //    imageInfo.mipLevels = calculateMipMaps( VkExtent2D{extent.width, extent.height});
+        //    miplevels = imageInfo.mipLevels;
+        //}
 
         if( arrayLayers == 6)
             imageInfo.flags |=  VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;// vk::ImageCreateFlagBits::eCubeCompatible;
@@ -906,7 +968,7 @@ protected:
             ci.compareEnable           =  VK_FALSE ;
             ci.compareOp               =  VK_COMPARE_OP_ALWAYS;// vk::CompareOp::eAlways ;
             ci.minLod                  =  0 ;
-            ci.maxLod                  =  static_cast<float>(miplevels) ;
+            ci.maxLod                  =  static_cast<float>(miplevels);
             ci.borderColor             =  VK_BORDER_COLOR_INT_OPAQUE_BLACK;// vk::BorderColor::eIntOpaqueBlack ;
             ci.unnormalizedCoordinates =  VK_FALSE ;
 
@@ -924,18 +986,19 @@ protected:
         return I;
     }
 
+    template<typename imageId_type>
     void _copyBufferToImage( VkCommandBuffer cmd,
                             _buffer srcBuffer,
                             uint32_t srcImageWidth,
                             uint32_t srcImageHeight,
-                            idTexture2D dstId,
+                            imageId_type dstId,
                             VkOffset3D dstOffset,
                             VkExtent3D dstExtent,
                             uint32_t   dstArrayBaseLayer,
                             uint32_t   dstMipBaseLevel
                           )
     {
-        auto & m_images = m_image2D.images;
+        //auto & m_images = m_image2D.images;
         // do buffer copy
         VkBufferImageCopy region = {};
 
@@ -953,7 +1016,7 @@ protected:
         vkCmdCopyBufferToImage(
             cmd,
             srcBuffer.first,
-            m_images[dstId.index].image,
+            getImage(dstId),
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             static_cast<uint32_t>(1),
             &region
@@ -976,7 +1039,7 @@ protected:
         return staging;
     }
 
-    _buffer _allocateBuffer(uint32_t size, VkBufferUsageFlags usage, VmaMemoryUsage memUsage)
+    _buffer _allocateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VmaMemoryUsage memUsage)
     {
         VkBufferCreateInfo bufferInfo = {};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1002,16 +1065,17 @@ protected:
 
     void destroyImage(ImageInfo & I)
     {
-        vkDestroyImageView(getDevice(), I.imageView, nullptr);
-
-        vkDestroySampler(getDevice(), I.sampler.linear, nullptr);
+        vkDestroySampler(getDevice(), I.sampler.linear,  nullptr);
         vkDestroySampler(getDevice(), I.sampler.nearest, nullptr);
 
-        I.sampler.linear = I.sampler.nearest = VK_NULL_HANDLE;
+        vkDestroyImageView(getDevice(), I.imageView, nullptr);
+
         vmaDestroyImage(getAllocator(), I.image, I.allocation);
+
         I.allocation = nullptr;
         I.image      = VK_NULL_HANDLE;
         I.imageView  = VK_NULL_HANDLE;
+        I.sampler.linear = I.sampler.nearest = VK_NULL_HANDLE;
     }
 
     template<typename callable_t>
@@ -1208,17 +1272,168 @@ protected:
     VkDescriptorPool      m_descriptorPool;
     VkCommandPool         m_commandPool;
 
-    struct
+    struct DescriptorArrayInfo
     {
-        std::vector<ImageInfo>       images;
-        std::vector<size_t>          free;
-    } m_image2D, m_imageCube;
-    //std::vector<ImageInfo>       m_images;
-    //std::vector<size_t>          m_freeImages;
-    std::vector<DescriptorChain> m_dChain;
+        uint32_t            binding;
+        std::vector<size_t> dirty;
+    };
+
+    struct bindingInfo
+    {
+        std::vector<ImageInfo>           images;
+        std::unordered_set<size_t>       free;
+        std::vector<DescriptorArrayInfo> arrayInfo; // one for each chain
+    };
+
+    //===================================================
+    size_t                       m_currentChain = 0;
+    std::vector<VkDescriptorSet> m_dsetChain;
+    bindingInfo                  m_image2D;
+    bindingInfo                  m_imageCube;
+    //===================================================
+
+    template<typename idType>
+    bindingInfo & bindingInfo()
+    {
+        if constexpr ( std::is_same_v<idType, idTexture2D >)
+        {
+            return m_image2D;
+        }
+        if constexpr ( std::is_same_v<idType, idTextureCube >)
+        {
+            return m_imageCube;
+        }
+    }
+    template<typename idType>
+    struct bindingInfo const & bindingInfo() const
+    {
+        if constexpr ( std::is_same_v<idType, idTexture2D >)
+        {
+            return m_image2D;
+        }
+        if constexpr ( std::is_same_v<idType, idTextureCube >)
+        {
+            return m_imageCube;
+        }
+    }
+
+    void _updateAllDirty(VkDevice device, VkDescriptorSet descriptorSet, uint32_t binding, std::vector<ImageInfo> const & images, std::vector<size_t> & m_dirty)
+    {
+        std::vector<VkWriteDescriptorSet> writes;
+        std::vector<VkDescriptorImageInfo> imageInfos;
+        writes.reserve(m_dirty.size());
+        imageInfos.reserve(m_dirty.size());
+
+        std::sort(m_dirty.begin(), m_dirty.end());
+        m_dirty.erase( std::unique( m_dirty.begin(), m_dirty.end()), m_dirty.end());
+
+        for(auto j : m_dirty)
+        {
+            auto & b = writes.emplace_back();
+            b.sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            b.dstArrayElement = static_cast<uint32_t>(j);
+            b.descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            b.dstBinding      = binding;
+            b.dstSet          = descriptorSet;
+
+            auto &img         = imageInfos.emplace_back();
+            {
+                auto i = std::min( images.size()-1, j);
+
+                // if the image doesn't exist, (ie: it has been destroyed)
+                // then use the first image in the array instead.
+                // this is usually the "null image"
+                if( images[i].image == VK_NULL_HANDLE)
+                {
+                    auto it = std::find_if( images.begin(),
+                                            images.end(),
+                                            [](auto & _img)
+                                            {
+                                                return _img.image != VK_NULL_HANDLE;
+                                            });
+                    if( it == images.end())
+                    {
+                        throw std::runtime_error("Image array has no valid images");
+                    }
+                    i = static_cast<size_t>(std::distance(images.begin(), it));
+                }
+
+                assert( images[i].image != VK_NULL_HANDLE );
+
+                img.imageLayout   = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                img.imageView     = images[i].imageView;
+                img.sampler       = images[i].sampler.linear;
+            }
+
+            b.pImageInfo      = &img;
+            b.descriptorCount = 1;
+        }
+        if( m_dirty.size() != 0)
+        {
+            std::cerr << "Updating: " << descriptorSet << ": " << m_dirty.size() << " descriptors" << std::endl;
+        }
+
+        vkUpdateDescriptorSets(device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        m_dirty.clear();
+    }
+
+    template<typename idType>
+    idType _allocateTexture(VkExtent3D ext3d,
+                                VkFormat format,
+                                uint32_t layers,
+                                uint32_t mipMaps,
+                                VkImageViewType viewType)
+    {
+      //  using idType = idTexture2D;
+        idType id{-1};
+
+        auto &images = bindingInfo<idType>().images;
+
+        // Loop through all the free images.
+        // These are images which were no longer needed, but are still
+        // allocated. They can be reused.
+        // So find one that fits the dimensions/format/etc
+        // and return that one. none exist, then
+        // we will have to create a new texture
+        id = _findAvailable<idType>(format, ext3d, 1, mipMaps);
+        if( id.index != -1)
+            return id;
+
+        auto img = image_Create( ext3d, format, viewType, layers, mipMaps, {});
+
+        //===========================================================================
+        // find a spot in the image array that is unused
+        for(auto & _im : images)
+        {
+            if(_im.image == VK_NULL_HANDLE)
+            {
+                _im = img;
+                id = idType{ static_cast<int32_t>(std::distance(&images.front(), &_im)) };
+            }
+        }
+        if(id.index == -1)
+        {
+            images.push_back(img);
+            id = idType{ static_cast<int32_t>(images.size()-1) };
+        }
+        //===========================================================================
+
+        _beginCommandBuffer([=](auto cmd)
+        {
+            _transitionLayout(cmd, getImage(id),
+                              VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                              0, getLayerCount(id),
+                              0, getMipmapCount(id));
+        });
+
+        setDirty(id);
+        return id;
+    }
+
+
+
     CreateInfo                   m_createInfo;
     bool                         m_selfManagedAllocator = false;
-    size_t                       m_currentChain         = 0;
 };
 
 }
