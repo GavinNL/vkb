@@ -15,6 +15,8 @@
 #include <unordered_set>
 #include <vk_mem_alloc.h>
 
+#include "BindlessTextureManagerTypes.h"
+
 namespace vkb
 {
 
@@ -40,40 +42,25 @@ namespace vkb
 }
 #endif
 
-/**
- * @brief The idTexture_t struct
- *
- * This is a wrapper around an index
- * into the array-of-textures in the shaders.
- *
- */
-template<uint32_t _binding>
-struct idTexture_t
-{
-    static constexpr auto binding = _binding;
-    int32_t index = -1;
-};
-
-using idTexture2D      = idTexture_t<0>;
-using idTextureCube    = idTexture_t<1>;
-using idTexture2DArray = idTexture_t<2>;
-
 template<typename Img_t>
 struct ImgQuery;
 
 
 struct ImageInfo
 {
-    VkImage           image;
-    VkImageView       imageView;
-    VkImageCreateInfo info;
-    VmaAllocation     allocation;
-    VmaAllocationInfo allocInfo;
+    VkImage           image     = VK_NULL_HANDLE;
+    VkImageView       imageView = VK_NULL_HANDLE;
+    VkImageCreateInfo info  = {};
+    VmaAllocation     allocation = nullptr;
+    VmaAllocationInfo allocInfo = {};
     VkImageViewType   viewType;
+    std::vector<VkImageView> mipMapViews; // one image view per mipmap
     struct
     {
-        VkSampler linear;
-        VkSampler nearest;
+        VkSampler linear  = VK_NULL_HANDLE;
+        VkSampler nearest = VK_NULL_HANDLE;
+
+        VkSampler current = VK_NULL_HANDLE;
     } sampler;
 };
 
@@ -266,13 +253,13 @@ public:
 
         for(auto  i : free)
         {
-            auto & info = images[i].info;
-            if( info.extent.width  == extent.width &&
-                info.extent.height == extent.height &&
-                info.extent.depth  == extent.depth  &&
-                info.arrayLayers   == arrayLayers &&
-                info.mipLevels     == mipMaps &&
-                info.format        == format)
+            auto & _info = images[i].info;
+            if( _info.extent.width  == extent.width &&
+                _info.extent.height == extent.height &&
+                _info.extent.depth  == extent.depth  &&
+                _info.arrayLayers   == arrayLayers &&
+                _info.mipLevels     == mipMaps &&
+                _info.format        == format)
             {
                 free.erase(i);
                 return { static_cast<int32_t>(i) };
@@ -283,22 +270,24 @@ public:
 
     idTexture2D allocateTexture(VkExtent2D extent,
                                 VkFormat format = VK_FORMAT_R8G8B8A8_UNORM,
-                                uint32_t mipMaps = 99999)
+                                uint32_t mipMaps = 99999,
+                                VkImageUsageFlags additionalUsage={})
     {
         auto ext3d        = VkExtent3D{extent.width, extent.height, 1};
         mipMaps           = std::clamp<uint32_t>(mipMaps, 1, calculateMipMaps(extent));
 
-        return _allocateTexture<idTexture2D>(ext3d, format, 1, mipMaps, VK_IMAGE_VIEW_TYPE_2D);
+        return _allocateTexture<idTexture2D>(ext3d, format, 1, mipMaps, VK_IMAGE_VIEW_TYPE_2D, additionalUsage);
     }
 
     idTextureCube allocateTextureCube(uint32_t cubeLength,
                                       VkFormat format = VK_FORMAT_R8G8B8A8_UNORM,
-                                      uint32_t mipMaps = 99999)
+                                      uint32_t mipMaps = 99999,
+                                      VkImageUsageFlags additionalUsage={})
     {
         auto ext3d        = VkExtent3D{cubeLength, cubeLength, 1};
         mipMaps           = std::clamp<uint32_t>(mipMaps, 1, calculateMipMaps(cubeLength));
 
-        return _allocateTexture<idTextureCube>(ext3d, format, 6, mipMaps, VK_IMAGE_VIEW_TYPE_CUBE);
+        return _allocateTexture<idTextureCube>(ext3d, format, 6, mipMaps, VK_IMAGE_VIEW_TYPE_CUBE, additionalUsage);
     }
 
     //=========================================================================================================================
@@ -386,7 +375,39 @@ public:
         return id;
     }
 
-
+    /**
+     * @brief setImageSampler
+     * @param img
+     * @param filter
+     * @return
+     *
+     * This is temporary
+     */
+    template<typename imageId_type>
+    bool setImageSampler( imageId_type id, VkFilter filter)
+    {
+        if(filter == VK_FILTER_NEAREST)
+        {
+            auto & imgInfo = info(id);
+            if(imgInfo.sampler.current != imgInfo.sampler.nearest)
+            {
+                imgInfo.sampler.current = imgInfo.sampler.nearest;
+                setDirty(id);
+                return true;
+            }
+        }
+        else
+        {
+            auto & imgInfo = info(id);
+            if(imgInfo.sampler.current != imgInfo.sampler.linear)
+            {
+                imgInfo.sampler.current = imgInfo.sampler.linear;
+                setDirty(id);
+            }
+            return true;
+        }
+        return false;
+    }
 
     //=========================================================================================================================
 
@@ -462,9 +483,11 @@ public:
                               dstMip  , 1);
 
             VkExtent3D _extent;
+            uint32_t dstRectOffsetx = static_cast<uint32_t>(dstRect.offset.x);
+            uint32_t dstRectOffsety = static_cast<uint32_t>(dstRect.offset.y);
             _extent.depth  = 1;
-            _extent.width  = std::min(extent.width  - dstRect.offset.x, dstRect.extent.width);
-            _extent.height = std::min(extent.height - dstRect.offset.y, dstRect.extent.height);
+            _extent.width  = std::min(extent.width  - dstRectOffsetx, dstRect.extent.width) ;
+            _extent.height = std::min(extent.height - dstRectOffsety, dstRect.extent.height);
 
             VkOffset3D _offset{ dstRect.offset.x, dstRect.offset.y, 0};
 
@@ -592,6 +615,7 @@ public:
     }
     uint32_t formatSize(VkFormat f) const
     {
+        (void)f;
         assert( f == VK_FORMAT_R8G8B8A8_UNORM);
         return 4;
     }
@@ -615,7 +639,16 @@ public:
     {
         return info(id).image;
     }
-
+    template<typename idType>
+    VkImageView getImageView(idType id) const
+    {
+        return info(id).imageView;
+    }
+    template<typename idType>
+    VkImageView getMipMapImageView(idType id, uint32_t mipmap) const
+    {
+        return info(id).mipMapViews.at(mipmap);
+    }
 
 
 
@@ -687,6 +720,16 @@ public:
     {
         m_currentChain = (m_currentChain+1) % m_dsetChain.size();
     }
+
+    /**
+     * @brief bind
+     * @param cmd
+     * @param set
+     * @param layout
+     *
+     * Bind the entire texture descriptor set to the
+     * command buffer.
+     */
     void bind(VkCommandBuffer cmd, uint32_t set, VkPipelineLayout layout)
     {
         auto dset = m_dsetChain[ getCurrentChain() ];
@@ -763,6 +806,10 @@ public:
     VkDescriptorSetLayout getDescriptorSetLayout() const
     {
         return m_layout;
+    }
+    VmaAllocator getAllocator()
+    {
+        return m_createInfo.allocator;
     }
 protected:
 
@@ -946,7 +993,19 @@ protected:
                 }
 
                 VK_CHECK_RESULT( vkCreateImageView(getDevice(), &ci, nullptr, &I.imageView) );
+
+                // Create one image view per mipmap level
+                for(uint32_t i=0;i<miplevels;i++)
+                {
+                    ci.subresourceRange.baseMipLevel = i;
+                    ci.subresourceRange.levelCount = 1;
+
+                    VkImageView vv;
+                    VK_CHECK_RESULT( vkCreateImageView(getDevice(), &ci, nullptr, &vv) );
+                    I.mipMapViews.push_back(vv);
+                }
             }
+
 
         }
 
@@ -968,7 +1027,7 @@ protected:
             ci.compareEnable           =  VK_FALSE ;
             ci.compareOp               =  VK_COMPARE_OP_ALWAYS;// vk::CompareOp::eAlways ;
             ci.minLod                  =  0 ;
-            ci.maxLod                  =  static_cast<float>(miplevels);
+            ci.maxLod                  =  VK_LOD_CLAMP_NONE;//static_cast<float>(miplevels);
             ci.borderColor             =  VK_BORDER_COLOR_INT_OPAQUE_BLACK;// vk::BorderColor::eIntOpaqueBlack ;
             ci.unnormalizedCoordinates =  VK_FALSE ;
 
@@ -981,6 +1040,8 @@ protected:
             ci.minFilter               =  VK_FILTER_NEAREST;//vk::Filter::eNearest;
 
             vkCreateSampler(getDevice(), &ci, nullptr, &I.sampler.nearest);
+
+            I.sampler.current = I.sampler.linear;
         }
 
         return I;
@@ -1027,6 +1088,7 @@ protected:
     {
         vmaDestroyBuffer(getAllocator(), buffer.first, buffer.second);
     }
+
     _buffer _allocateStagingBuffer(void const * data, uint32_t byteSize)
     {
         auto staging = _allocateBuffer(byteSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -1067,15 +1129,19 @@ protected:
     {
         vkDestroySampler(getDevice(), I.sampler.linear,  nullptr);
         vkDestroySampler(getDevice(), I.sampler.nearest, nullptr);
-
         vkDestroyImageView(getDevice(), I.imageView, nullptr);
-
+        for(auto & v : I.mipMapViews)
+        {
+            vkDestroyImageView(getDevice(), v, nullptr);
+        }
         vmaDestroyImage(getAllocator(), I.image, I.allocation);
 
         I.allocation = nullptr;
         I.image      = VK_NULL_HANDLE;
         I.imageView  = VK_NULL_HANDLE;
         I.sampler.linear = I.sampler.nearest = VK_NULL_HANDLE;
+        I.sampler.current = VK_NULL_HANDLE;
+        I.mipMapViews.clear();
     }
 
     template<typename callable_t>
@@ -1110,14 +1176,17 @@ protected:
 
         return cmdBuffer;
     }
+
     VkCommandPool getCommandPool()
     {
         return m_commandPool;
     }
+
     void _freeCommandBuffer(VkCommandBuffer cmd)
     {
         vkFreeCommandBuffers(getDevice(), getCommandPool(), 1, &cmd);
     }
+
     VkFence _submitCommandBuffer(VkCommandBuffer cmd, bool waitForFence=true)
     {
         VkSubmitInfo submitInfo{};
@@ -1143,6 +1212,7 @@ protected:
             return fence;
         }
     }
+
     void _image_TransitionLayout(VkCommandBuffer cmd,
                                 VkImage image,
                                 VkImageLayout oldLayout,
@@ -1264,10 +1334,7 @@ protected:
         // destroy the layout
         return m_createInfo.device;
     }
-    VmaAllocator getAllocator()
-    {
-        return m_createInfo.allocator;
-    }
+
     VkDescriptorSetLayout m_layout;
     VkDescriptorPool      m_descriptorPool;
     VkCommandPool         m_commandPool;
@@ -1362,7 +1429,7 @@ protected:
 
                 img.imageLayout   = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                 img.imageView     = images[i].imageView;
-                img.sampler       = images[i].sampler.linear;
+                img.sampler       = images[i].sampler.current;
             }
 
             b.pImageInfo      = &img;
@@ -1378,15 +1445,26 @@ protected:
     }
 
     template<typename idType>
+    size_t maxTextures() const
+    {
+        if constexpr ( std::is_same_v<idType, idTexture2D >)
+        {
+            return m_createInfo.totalTexture2D;
+        }
+        if constexpr ( std::is_same_v<idType, idTextureCube >)
+        {
+            return m_createInfo.totalTextureCube;
+        }
+    }
+
+    template<typename idType>
     idType _allocateTexture(VkExtent3D ext3d,
                                 VkFormat format,
                                 uint32_t layers,
                                 uint32_t mipMaps,
-                                VkImageViewType viewType)
+                                VkImageViewType viewType,
+                                VkImageUsageFlags additionalUsageFlags)
     {
-      //  using idType = idTexture2D;
-        idType id{-1};
-
         auto &images = bindingInfo<idType>().images;
 
         // Loop through all the free images.
@@ -1395,39 +1473,63 @@ protected:
         // So find one that fits the dimensions/format/etc
         // and return that one. none exist, then
         // we will have to create a new texture
-        id = _findAvailable<idType>(format, ext3d, 1, mipMaps);
-        if( id.index != -1)
-            return id;
-
-        auto img = image_Create( ext3d, format, viewType, layers, mipMaps, {});
-
-        //===========================================================================
-        // find a spot in the image array that is unused
-        for(auto & _im : images)
         {
-            if(_im.image == VK_NULL_HANDLE)
+            auto id = _findAvailable<idType>(format, ext3d, 1, mipMaps);
+
+            if( id.index != -1)
             {
-                _im = img;
-                id = idType{ static_cast<int32_t>(std::distance(&images.front(), &_im)) };
+                // a free image was found
+                return id;
             }
         }
-        if(id.index == -1)
+
+
+        // find an index in the image array
+        // that is currently not being used and returns that one
+        // if none can be found, appends an index to the end if
+        // it is not already at its max capacity.
+        auto _findAvailableIndex = [&]() -> idType
         {
-            images.push_back(img);
-            id = idType{ static_cast<int32_t>(images.size()-1) };
+            for(auto & _im : images)
+            {
+                if(_im.image == VK_NULL_HANDLE)
+                {
+                    return idType{ static_cast<int32_t>(std::distance(&images.front(), &_im)) };
+                }
+            }
+            if( images.size() < maxTextures<idType>() )
+            {
+                images.emplace_back();
+                return idType{ static_cast<int32_t>(images.size()-1) };
+            }
+            return idType{-1};
+        };
+
+
+
+        {
+            auto id = _findAvailableIndex();
+            if( id.index == -1)
+            {
+                throw std::runtime_error("Unable to allocate a new texture");
+            }
+
+
+            auto img = image_Create( ext3d, format, viewType, layers, mipMaps, additionalUsageFlags);
+            images[static_cast<size_t>(id.index)] = img;
+
+            _beginCommandBuffer([=](auto cmd)
+            {
+                _transitionLayout(cmd, getImage(id),
+                                  VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                  0, getLayerCount(id),
+                                  0, getMipmapCount(id));
+            });
+
+            setDirty(id);
+            return id;
         }
-        //===========================================================================
 
-        _beginCommandBuffer([=](auto cmd)
-        {
-            _transitionLayout(cmd, getImage(id),
-                              VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                              0, getLayerCount(id),
-                              0, getMipmapCount(id));
-        });
-
-        setDirty(id);
-        return id;
     }
 
 
