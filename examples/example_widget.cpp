@@ -452,9 +452,7 @@ int main(int argc, char *argv[])
 
 
 
-
-#include <vkw/SDLVulkanWindow_INIT.inl>
-#include <vkw/SDLVulkanWindow_USAGE.inl>
+#include <vkw/VKWVulkanWindow.inl>
 
 
 #define VMA_IMPLEMENTATION

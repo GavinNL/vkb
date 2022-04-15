@@ -4,17 +4,15 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_vulkan.h>
 
-#include <vkw/SDLVulkanWindow.h>
-#include <vkw/SDLVulkanWindow_INIT.inl>
-#include <vkw/SDLVulkanWindow_USAGE.inl>
+#include <vkw/VKWVulkanWindow.h>
+#include <vkw/Adapters/SDLVulkanWindowAdapter.h>
+#include "unit_helpers.h"
+
+#include <vkb/vkb.h>
+#include <vkb/utils/SPIRV_DescriptorSetLayoutGenerator.h>
 
 using namespace vkw;
 
-#include <vulkan/vulkan.hpp>
-
-#include <vkb/vkb.h>
-
-#include <vkb/utils/SPIRV_DescriptorSetLayoutGenerator.h>
 
 std::vector<uint32_t> readSPV(std::string path)
 {
@@ -29,45 +27,12 @@ std::vector<uint32_t> readSPV(std::string path)
 }
 
 
-static VKAPI_ATTR VkBool32 VKAPI_CALL VulkanReportFunc(
-    VkDebugReportFlagsEXT flags,
-    VkDebugReportObjectTypeEXT objType,
-    uint64_t obj,
-    size_t location,
-    int32_t code,
-    const char* layerPrefix,
-    const char* msg,
-    void* userData)
-{
-    (void)obj;
-    (void)flags;
-    (void)objType;
-    (void)location;
-    (void)code;
-    (void)userData;
-    printf("VULKAN VALIDATION: [%s] %s\n", layerPrefix, msg);
-    //throw std::runtime_error( msg );
-    return VK_FALSE;
-}
-
-
 SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
 {
-    SDL_Init(SDL_INIT_EVERYTHING);
-    auto window = new SDLVulkanWindow();
+    // create a default window and initialize all vulkan
+    // objects.
+    auto window = createWindow(1024,768);
 
-    // 1. create the window
-    window->createWindow("Simple Deferred", SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED, 1024,768);
-
-    // 2. initialize the vulkan instance
-    SDLVulkanWindow::InitilizationInfo info;
-    info.callback = VulkanReportFunc;
-    window->createVulkanInstance( info);
-
-    // 3. Create the following objects:
-    //    instance, physical device, device, graphics/present queues,
-    //    swap chain, depth buffer, render pass and framebuffers
-    window->initSurface(SDLVulkanWindow::SurfaceInitilizationInfo());
 
     // resize the framegraph to the size of the
     // swapchain. This will allocate any internal
@@ -78,8 +43,8 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
 #if 1
     GIVEN("Some shader source code")
     {
-        auto vertexS   =  readSPV(CMAKE_SOURCE_DIR "/share/shaders/pbr_vert.spv");
-        auto fragmentS =  readSPV(CMAKE_SOURCE_DIR "/share/shaders/pbr_frag.spv");
+        auto vertexS   =  readSPV(CMAKE_SOURCE_DIR "/share/shaders/pbr.vert.spv");
+        auto fragmentS =  readSPV(CMAKE_SOURCE_DIR "/share/shaders/pbr.frag.spv");
 
         vkb::SPIRV_PipelineReflector reflector;
         reflector.addSPIRVCode( vertexS, VK_SHADER_STAGE_VERTEX_BIT);
@@ -193,8 +158,8 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
     {
         vkb::SPIRV_PipelineReflector reflector;
 
-        reflector.addSPIRVCode( readSPV(CMAKE_SOURCE_DIR "/share/shaders/pbr_vert.spv"), VK_SHADER_STAGE_VERTEX_BIT);
-        reflector.addSPIRVCode( readSPV(CMAKE_SOURCE_DIR "/share/shaders/pbr_frag.spv"), VK_SHADER_STAGE_FRAGMENT_BIT);
+        reflector.addSPIRVCode( readSPV(CMAKE_SOURCE_DIR "/share/shaders/pbr.vert.spv"), VK_SHADER_STAGE_VERTEX_BIT);
+        reflector.addSPIRVCode( readSPV(CMAKE_SOURCE_DIR "/share/shaders/pbr.frag.spv"), VK_SHADER_STAGE_FRAGMENT_BIT);
 
 
         {
@@ -265,7 +230,7 @@ SCENARIO( " Scenario 1: Create a DescriptorSetLayout" )
         }
     }
 
-    delete window;
+    window.reset();
     SDL_Quit();
 
 }

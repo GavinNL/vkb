@@ -5,8 +5,8 @@
 #include <SDL2/SDL_vulkan.h>
 
 #include <vkw/Adapters/SDLVulkanWindowAdapter.h>
-#include <vkw/SDLVulkanWindow_INIT.inl>
-#include <vkw/SDLVulkanWindow_USAGE.inl>
+#include <vkw/VKWVulkanWindow.inl>
+
 
 #include <vulkan/vulkan.hpp>
 
@@ -60,7 +60,6 @@ std::shared_ptr<vkw::VKWVulkanWindow> createWindow(uint32_t width, uint32_t heig
     surfaceInfo.additionalImageCount = 1;// how many additional swapchain images should we create ( total = min_images + additionalImageCount
     window->createVulkanSurface(surfaceInfo);
 
-    window->createVulkanPhysicalDevice();
 
     // 4. Create the device
     //    and add additional extensions that we want to enable

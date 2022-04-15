@@ -79,9 +79,9 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test" AND IS_DIRECTORY "${CMAKE_CURRENT_S
         ################################################################################
         find_package(Vulkan)
 
-        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party_local")
-            add_subdirectory(third_party_local/vkw)
-            add_subdirectory(third_party_local/gul)
+        if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party_sym")
+            add_subdirectory(third_party_sym/vkw)
+            add_subdirectory(third_party_sym/gul)
         else()
             add_subdirectory(third_party/vkw)
             add_subdirectory(third_party/gul)

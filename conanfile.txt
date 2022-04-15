@@ -1,5 +1,5 @@
 [requires]
-sdl/2.0.16
+sdl/2.0.20
 spirv-cross/20210115
 vulkan-loader/1.2.190
 fmt/7.1.3
